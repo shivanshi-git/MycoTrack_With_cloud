@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "524337915828",
+    "project_id": "mycotrack-9cc24",
+    "storage_bucket": "mycotrack-9cc24.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:524337915828:android:504abb13b0c49bb88e74e1",
+        "android_client_info": {
+          "package_name": "com.mycotrack.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAv3LccE1S_B_DXp-ErYyz_JxJMyaioV_I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
