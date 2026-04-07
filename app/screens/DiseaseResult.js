@@ -18,11 +18,11 @@ const C = {
   amber:   "#d97706",   // primary accent
   amber2:  "#f59e0b",   // highlight accent
   brown:   "#92400e",   // darker accent
-
+  infected: "#dc2626",
   cream:   "#1f2937",   // main text (dark grey)
   cream2:  "#374151",   // secondary text
   cream3:  "#6b7280",   // tertiary text
-
+  errBdr:   "#fca5a5",
   muted:   "#9ca3af",   // muted text
 
   healthy: "#16a34a",   // green
