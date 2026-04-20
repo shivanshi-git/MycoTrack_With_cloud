@@ -34,6 +34,10 @@ pip install boto3 awsiotsdk opencv-python-headless Pillow schedule
 3. App client → no secret (for React Native)
 4. Copy **User Pool ID** + **App Client ID** → paste in `aws/awsConfig.js`
 
+
+
+
+
 ### B. DynamoDB (Database)
 Create 3 tables:
 
