@@ -1,34 +1,40 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, Button, ScrollView } from "react-native";
+import { useRouter } from "expo-router";
 
 export default function Page() {
+  const router = useRouter();
+
   return (
-    <View style={styles.container}>
-      <View style={styles.main}>
-        <Text style={styles.title}>Hello World</Text>
-        <Text style={styles.subtitle}>This is the first page of your app.</Text>
-      </View>
-    </View>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>Home</Text>
+
+      <Button title="Alerts" onPress={() => router.push("/screens/Alerts")} />
+      <Button title="Camera AI" onPress={() => router.push("/screens/CameraAI")} />
+      <Button title="Dashboard" onPress={() => router.push("/screens/Dashboard")} />
+      <Button title="Disease Result" onPress={() => router.push("/screens/DiseaseResult")} />
+      <Button title="Forgot Password" onPress={() => router.push("/screens/ForgotPassword")} />
+      <Button title="Login" onPress={() => router.push("/screens/Login")} />
+      <Button title="Monitoring" onPress={() => router.push("/screens/Monitoring")} />
+      <Button title="OTP Verification" onPress={() => router.push("/screens/OtpsVerification")} />
+      <Button title="Reset Success" onPress={() => router.push("/screens/ResetSuccess")} />
+      <Button title="Settings" onPress={() => router.push("/screens/Settings")} />
+      <Button title="Signup" onPress={() => router.push("/screens/Signup")} />
+      <Button title="Welcome" onPress={() => router.push("/screens/Welcome")} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: "center",
-    padding: 24,
-  },
-  main: {
-    flex: 1,
     justifyContent: "center",
-    maxWidth: 960,
-    marginHorizontal: "auto",
+    padding: 20,
+    gap: 10,
   },
   title: {
-    fontSize: 64,
+    fontSize: 24,
     fontWeight: "bold",
-  },
-  subtitle: {
-    fontSize: 36,
-    color: "#38434D",
+    marginBottom: 20,
   },
 });

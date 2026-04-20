@@ -1,21 +1,87 @@
+# # realtime_mushroom.py
+# from fastapi import FastAPI, File, UploadFile
+# from fastapi.middleware.cors import CORSMiddleware
+# import torch
+# import torchvision.models as tv_models
+# import torchvision.transforms as transforms
+# from PIL import Image
+# import io
+
+# app = FastAPI()
+# app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# MEAN = [0.485, 0.456, 0.406]
+# STD  = [0.229, 0.224, 0.225]
+
+# def get_classifier():
+#     # Match whatever ARCH you trained — resnet50 or resnet18
+#     model = tv_models.resnet50(weights=None)
+#     in_features = model.fc.in_features
+#     model.fc = torch.nn.Sequential(
+#         torch.nn.Dropout(0.4),
+#         torch.nn.Linear(in_features, 512),
+#         torch.nn.ReLU(inplace=True),
+#         torch.nn.Dropout(0.3),
+#         torch.nn.Linear(512, 2),
+#     )
+#     state = torch.load("mushroom_cls.pth", map_location=DEVICE)
+#     model.load_state_dict(state)
+#     model.eval()
+#     return model.to(DEVICE)
+
+# model = get_classifier()
+
+# tf = transforms.Compose([
+#     transforms.Resize(256),
+#     transforms.CenterCrop(224),
+#     transforms.ToTensor(),
+#     transforms.Normalize(MEAN, STD),
+# ])
+
+# @app.post("/predict")
+# async def predict(file: UploadFile = File(...)):
+#     img = Image.open(io.BytesIO(await file.read())).convert("RGB")
+#     tensor = tf(img).unsqueeze(0).to(DEVICE)
+#     with torch.no_grad():
+#         out = model(tensor)
+#         probs = torch.softmax(out, dim=1)[0]
+#         pred = out.argmax(1).item()
+#     confidence = round(probs[pred].item() * 100, 1)
+#     return {
+#         "healthy": pred == 0,       # 0 = Healthy, 1 = Unhealthy
+#         "confidence": confidence
+#     }
+
+
 # realtime_mushroom.py
-from fastapi import FastAPI, File, UploadFile
+import os
+import io
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import torch
 import torchvision.models as tv_models
 import torchvision.transforms as transforms
-from PIL import Image
-import io
+from PIL import Image, UnidentifiedImageError
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MEAN = [0.485, 0.456, 0.406]
-STD  = [0.229, 0.224, 0.225]
+MEAN   = [0.485, 0.456, 0.406]
+STD    = [0.229, 0.224, 0.225]
+
+# ── Absolute path so the model loads correctly from any working directory ──────
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mushroom_cls.pth")
+
 
 def get_classifier():
-    # Match whatever ARCH you trained — resnet50 or resnet18
     model = tv_models.resnet50(weights=None)
     in_features = model.fc.in_features
     model.fc = torch.nn.Sequential(
@@ -25,10 +91,11 @@ def get_classifier():
         torch.nn.Dropout(0.3),
         torch.nn.Linear(512, 2),
     )
-    state = torch.load("mushroom_cls.pth", map_location=DEVICE)
+    state = torch.load(MODEL_PATH, map_location=DEVICE)
     model.load_state_dict(state)
     model.eval()
     return model.to(DEVICE)
+
 
 model = get_classifier()
 
@@ -39,16 +106,50 @@ tf = transforms.Compose([
     transforms.Normalize(MEAN, STD),
 ])
 
+
+# ── Health check — lets the app verify the server is alive ────────────────────
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "device": DEVICE,
+        "model":  "ResNet-50",
+    }
+
+
+# ── Prediction endpoint ────────────────────────────────────────────────────────
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    img = Image.open(io.BytesIO(await file.read())).convert("RGB")
-    tensor = tf(img).unsqueeze(0).to(DEVICE)
-    with torch.no_grad():
-        out = model(tensor)
-        probs = torch.softmax(out, dim=1)[0]
-        pred = out.argmax(1).item()
-    confidence = round(probs[pred].item() * 100, 1)
-    return {
-        "healthy": pred == 0,       # 0 = Healthy, 1 = Unhealthy
-        "confidence": confidence
-    }
+    # Validate content type
+    if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type: {file.content_type}. Send JPEG, PNG, or WebP.",
+        )
+
+    try:
+        raw = await file.read()
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Could not decode image. Send a valid JPEG/PNG.")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Image read error: {str(e)}")
+
+    try:
+        tensor = tf(img).unsqueeze(0).to(DEVICE)
+        with torch.no_grad():
+            out   = model(tensor)
+            probs = torch.softmax(out, dim=1)[0]
+            pred  = out.argmax(1).item()
+
+        confidence = round(probs[pred].item() * 100, 1)
+        label      = "Healthy" if pred == 0 else "Unhealthy"
+
+        return {
+            "healthy":    pred == 0,   # 0 = Healthy, 1 = Unhealthy
+            "label":      label,
+            "confidence": confidence,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")

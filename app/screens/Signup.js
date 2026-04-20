@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { registerUser } from "../../aws/authService"; // ← AWS Cognito
+import { registerUser } from "../../src/AWS/AuthService";
 
 import {
   StyledContainer,

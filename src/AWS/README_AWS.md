@@ -36,8 +36,6 @@ pip install boto3 awsiotsdk opencv-python-headless Pillow schedule
 
 
 
-
-
 ### B. DynamoDB (Database)
 Create 3 tables:
 
