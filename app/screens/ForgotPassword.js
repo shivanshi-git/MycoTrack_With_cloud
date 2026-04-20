@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { resetPassword } from "../../firebase/authService";
+import { resetPassword } from "../../aws/authService"; // ← AWS Cognito
+
 import {
   StyledContainer,
   InnerContainer,
@@ -22,13 +23,12 @@ import {
 } from "../../components/styles";
 
 const ForgotPassword = () => {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
+  const router  = useRouter();
+  const [email,   setEmail]   = useState("");
   const [loading, setLoading] = useState(false);
 
-  // FIX: Firebase sendPasswordResetEmail sends a reset link, not an OTP.
-  // The flow now correctly sends the email and then shows a confirmation alert
-  // before navigating back to Login, instead of going to an OTP screen.
+  // AWS Cognito sends a verification code to the user's email.
+  // After this succeeds, navigate to OTP screen where user enters the code.
   const handleReset = async () => {
     if (!email) {
       alert("Please enter your email address.");
@@ -37,9 +37,9 @@ const ForgotPassword = () => {
 
     setLoading(true);
     try {
-      await resetPassword(email);
-      alert("Password reset email sent! Check your inbox and follow the link to reset your password.");
-      router.push("/screens/Login");
+      await resetPassword(email); // AWS Cognito forgotPassword()
+      // Cognito sends a 6-digit code → go to OTP screen to verify it
+      router.push("/screens/OtpsVerification");
     } catch (error) {
       alert(error.message);
     } finally {
@@ -52,7 +52,6 @@ const ForgotPassword = () => {
       <InnerContainer>
 
         {/* BACK BUTTON */}
-
         <SignUpLink onPress={() => router.push("/screens/Login")}>
           <SignUpLinkText>← Back to login</SignUpLinkText>
         </SignUpLink>
@@ -69,13 +68,11 @@ const ForgotPassword = () => {
         </PageTitle>
 
         <SignUpText style={{ textAlign: "center", marginBottom: 20 }}>
-          Enter your email and we'll send a reset link to your inbox.
+          Enter your email and we'll send a 6-digit code to your inbox.
         </SignUpText>
 
         {/* EMAIL INPUT */}
-
         <InputLabel>EMAIL ADDRESS</InputLabel>
-
         <InputContainer>
           <Ionicons name="mail-outline" size={20} color="#C9A98B" />
           <StyledInput
@@ -88,24 +85,21 @@ const ForgotPassword = () => {
           />
         </InputContainer>
 
-        {/* SEND RESET BUTTON */}
-
+        {/* SEND CODE BUTTON */}
         <ButtonContainer onPress={handleReset} disabled={loading}>
           <GradientButton
             colors={["#A65E1B", "#D88A2E"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
-            <ButtonText>{loading ? "Sending..." : "Send Reset Link →"}</ButtonText>
+            <ButtonText>{loading ? "Sending..." : "Send Reset Code →"}</ButtonText>
           </GradientButton>
         </ButtonContainer>
-
-        {/* SIGN IN LINK */}
 
         <SignUpContainer>
           <SignUpText>Remembered it?</SignUpText>
           <SignUpLink onPress={() => router.push("/screens/Login")}>
-             <SignUpLinkText>Sign in</SignUpLinkText>
+            <SignUpLinkText>Sign in</SignUpLinkText>
           </SignUpLink>
         </SignUpContainer>
 

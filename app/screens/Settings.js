@@ -1,7 +1,7 @@
 /**
  * Settings.js
- * Settings & Data — styled to match MycoTrack dark amber theme
- * Content ported from settings.tsx (Thresholds, Automation, History, Device)
+ * Settings & Data — MycoTrack dark amber theme
+ * Migrated: Firebase RTDB → AWS DynamoDB via dbService
  */
 
 import React, { useState, useEffect } from "react";
@@ -16,33 +16,29 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, onValue, set } from "firebase/database";
-import { db } from "../../firebase/firebaseConfig";
+import { getSettings, saveThresholds, saveAutomation } from "../../aws/dbService"; // ← AWS
 import { useRouter } from "expo-router";
 import { BottomNav } from "./Dashboard";
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
 const C = {
-  bg:      "#f9fafb",   // main background (soft white)
-  card:    "#ffffff",   // card background
-  border:  "#e5e7eb",   // light border
-  border2: "#d1d5db",   // slightly stronger border
-
-  amber:   "#d97706",   // primary accent
-  amber2:  "#f59e0b",   // highlight accent
-  brown:   "#92400e",   // darker accent
-
-  cream:   "#1f2937",   // main text (dark grey)
-  cream2:  "#374151",   // secondary text
-  cream3:  "#6b7280",   // tertiary text
-
-  muted:   "#9ca3af",   // muted text
-
-  healthy: "#16a34a",   // green
-  warning: "#f59e0b",   // amber
-  danger:  "#dc2626",   // red
+  bg:      "#f9fafb",
+  card:    "#ffffff",
+  border:  "#e5e7eb",
+  border2: "#d1d5db",
+  amber:   "#d97706",
+  amber2:  "#f59e0b",
+  brown:   "#92400e",
+  cream:   "#1f2937",
+  cream2:  "#374151",
+  cream3:  "#6b7280",
+  muted:   "#9ca3af",
+  healthy: "#16a34a",
+  warning: "#f59e0b",
+  danger:  "#dc2626",
 };
+
 // ─── Mock history data ────────────────────────────────────────────────────────
 
 const HISTORY = {
@@ -60,7 +56,7 @@ const HISTORY = {
 
 const LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-// ─── Bar Sparkline Chart (no SVG) ────────────────────────────────────────────
+// ─── Bar Chart ────────────────────────────────────────────────────────────────
 
 function BarChart({ data, color, maxVal }) {
   const max = maxVal || Math.max(...data) * 1.1;
@@ -68,15 +64,13 @@ function BarChart({ data, color, maxVal }) {
     <View style={{ flexDirection: "row", alignItems: "flex-end", height: 60, gap: 4, marginTop: 10 }}>
       {data.map((v, i) => (
         <View key={i} style={{ flex: 1, alignItems: "center", gap: 4 }}>
-          <View
-            style={{
-              width: "100%",
-              height: (v / max) * 60,
-              backgroundColor: color,
-              borderRadius: 3,
-              opacity: 0.5 + (i / data.length) * 0.5,
-            }}
-          />
+          <View style={{
+            width: "100%",
+            height: (v / max) * 60,
+            backgroundColor: color,
+            borderRadius: 3,
+            opacity: 0.5 + (i / data.length) * 0.5,
+          }} />
           <Text style={{ fontSize: 8, color: C.muted }}>{LABELS[i]}</Text>
         </View>
       ))}
@@ -118,38 +112,54 @@ function ThresholdField({ label, value, onChange }) {
 
 export default function Settings() {
   const router = useRouter();
-  const [data,       setData]       = useState({});
-  const [thresholds, setThresholds] = useState({ tempMin: 20, tempMax: 25, humidityMin: 80, humidityMax: 90, soil: 65, co2: 800 });
-  const [automation, setAutomation] = useState({ fan: true, humidifier: true, watering: true, night: false });
-  const [mode,       setMode]       = useState("weekly");
 
-  // Firebase
+  const [deviceInfo,  setDeviceInfo]  = useState({});
+  const [thresholds,  setThresholds]  = useState({ tempMin: 20, tempMax: 25, humidityMin: 80, humidityMax: 90, soil: 65, co2: 800 });
+  const [automation,  setAutomation]  = useState({ fan: true, humidifier: true, watering: true, night: false });
+  const [mode,        setMode]        = useState("weekly");
+  const [saving,      setSaving]      = useState(false);
+
+  // ── AWS: fetch settings from DynamoDB on mount ─────────────────────────────
   useEffect(() => {
-    if (!db) return;
-    const unsub = onValue(ref(db, "/"), (snap) => {
-      if (snap.exists()) {
-        const d = snap.val();
-        setData(d);
-        if (d.thresholds) setThresholds(d.thresholds);
-        if (d.automation)  setAutomation(d.automation);
+    const fetchSettings = async () => {
+      try {
+        const data = await getSettings("house_1");
+        if (data?.thresholds) setThresholds(data.thresholds);
+        if (data?.automation)  setAutomation(data.automation);
+        if (data?.device)      setDeviceInfo(data.device);
+      } catch (err) {
+        console.warn("Failed to fetch settings from DynamoDB:", err);
       }
-    });
-    return () => unsub();
+    };
+    fetchSettings();
   }, []);
 
-  const saveThresholds = () => {
-    if (db) set(ref(db, "thresholds"), thresholds);
+  // ── AWS: save thresholds to DynamoDB ──────────────────────────────────────
+  const handleSaveThresholds = async () => {
+    setSaving(true);
+    try {
+      await saveThresholds("house_1", thresholds);
+      alert("Thresholds saved successfully.");
+    } catch (err) {
+      alert("Failed to save thresholds: " + err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const toggleRule = (key) => {
+  // ── AWS: toggle automation rule and persist to DynamoDB ───────────────────
+  const toggleRule = async (key) => {
     const updated = { ...automation, [key]: !automation[key] };
     setAutomation(updated);
-    if (db) set(ref(db, "automation"), updated);
+    try {
+      await saveAutomation("house_1", updated);
+    } catch (err) {
+      console.warn("Failed to update automation rule:", err);
+    }
   };
 
   const tempData  = HISTORY.temperature[mode];
   const humidData = HISTORY.humidity[mode];
-
   const modeLabel = mode === "daily" ? "Last 24 hours" : mode === "weekly" ? "Last 7 days" : "Last 30 days";
 
   return (
@@ -169,7 +179,6 @@ export default function Settings() {
           <View style={s.card}>
             <SectionHeader icon="analytics-outline" title="Data History" />
 
-            {/* Mode tabs */}
             <View style={s.tabRow}>
               {["daily", "weekly", "monthly"].map((t) => (
                 <TouchableOpacity
@@ -234,14 +243,14 @@ export default function Settings() {
             </View>
 
             <Text style={s.groupLabel}>Soil Moisture</Text>
-            <ThresholdField label="Min (%)"    value={thresholds.soil}        onChange={(v) => setThresholds({ ...thresholds, soil: v })} />
+            <ThresholdField label="Min (%)"   value={thresholds.soil}         onChange={(v) => setThresholds({ ...thresholds, soil: v })} />
 
             <Text style={s.groupLabel}>CO₂ Level</Text>
-            <ThresholdField label="Max (ppm)"  value={thresholds.co2}         onChange={(v) => setThresholds({ ...thresholds, co2: v })} />
+            <ThresholdField label="Max (ppm)" value={thresholds.co2}          onChange={(v) => setThresholds({ ...thresholds, co2: v })} />
 
-            <TouchableOpacity style={s.saveBtn} onPress={saveThresholds}>
+            <TouchableOpacity style={s.saveBtn} onPress={handleSaveThresholds} disabled={saving}>
               <Ionicons name="checkmark-outline" size={14} color={C.cream} />
-              <Text style={s.saveBtnText}>Save Threshold Settings</Text>
+              <Text style={s.saveBtnText}>{saving ? "Saving..." : "Save Threshold Settings"}</Text>
             </TouchableOpacity>
           </View>
 
@@ -250,10 +259,10 @@ export default function Settings() {
             <SectionHeader icon="flash-outline" title="Automation Rules" />
 
             {[
-              { key: "fan",        label: "Auto fan when temp > 24°C",    icon: "aperture-outline" },
-              { key: "humidifier", label: "Auto humidifier when < 80%",   icon: "cloud-outline"    },
-              { key: "watering",   label: "Auto watering every 4 hours",  icon: "water-outline"    },
-              { key: "night",      label: "Night mode (22:00 – 06:00)",   icon: "moon-outline"     },
+              { key: "fan",        label: "Auto fan when temp > 24°C",   icon: "aperture-outline" },
+              { key: "humidifier", label: "Auto humidifier when < 80%",  icon: "cloud-outline"    },
+              { key: "watering",   label: "Auto watering every 4 hours", icon: "water-outline"    },
+              { key: "night",      label: "Night mode (22:00 – 06:00)",  icon: "moon-outline"     },
             ].map(({ key, label, icon }) => (
               <View key={key} style={s.autoRow}>
                 <View style={s.autoLeft}>
@@ -275,11 +284,11 @@ export default function Settings() {
             <SectionHeader icon="hardware-chip-outline" title="Device Information" />
 
             {[
-              { label: "Device ID",        value: data.device?.id       || "MF-001-2026",    color: C.cream2  },
-              { label: "Firmware Version", value: data.device?.firmware || "v3.2.1",          color: C.cream2  },
-              { label: "WiFi Status",      value: "Connected",                                  color: C.healthy },
-              { label: "Last Sync",        value: data.device?.lastSync || "2 min ago",        color: C.cream3  },
-              { label: "Uptime",           value: data.device?.uptime   || "15 days 8 hours",  color: C.cream3  },
+              { label: "Device ID",        value: deviceInfo.id       || "MF-001-2026",   color: C.cream2  },
+              { label: "Firmware Version", value: deviceInfo.firmware || "v3.2.1",         color: C.cream2  },
+              { label: "WiFi Status",      value: "Connected",                               color: C.healthy },
+              { label: "Last Sync",        value: deviceInfo.lastSync || "2 min ago",       color: C.cream3  },
+              { label: "Uptime",           value: deviceInfo.uptime   || "15 days 8 hours", color: C.cream3  },
             ].map(({ label, value, color }) => (
               <View key={label} style={s.deviceRow}>
                 <Text style={s.deviceLabel}>{label}</Text>
@@ -320,20 +329,18 @@ const s = StyleSheet.create({
   ptitle: { fontSize: 22, fontWeight: "700", color: C.cream, marginBottom: 4 },
   psub:   { fontSize: 12, color: C.cream3, marginBottom: 14 },
 
-  card:      { backgroundColor: C.card, borderWidth: 1, borderColor: C.border2, borderRadius: 12, padding: 14, marginBottom: 10 },
+  card: { backgroundColor: C.card, borderWidth: 1, borderColor: C.border2, borderRadius: 12, padding: 14, marginBottom: 10 },
 
   sectionHeader:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
   sectionIconBox: { width: 26, height: 26, borderRadius: 7, backgroundColor: C.brown + "55", borderWidth: 1, borderColor: C.border2, alignItems: "center", justifyContent: "center" },
   sectionTitle:   { fontSize: 14, fontWeight: "600", color: C.cream2 },
 
-  // Tabs
   tabRow:        { flexDirection: "row", gap: 6, marginBottom: 10 },
   tab:           { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.border2 },
   tabActive:     { backgroundColor: C.brown, borderColor: C.amber },
   tabText:       { fontSize: 12, color: C.muted },
   tabTextActive: { fontSize: 12, color: C.amber2, fontWeight: "600" },
 
-  // Charts
   chartBox:    { backgroundColor: "rgba(255,255,255,0.02)", borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10 },
   chartHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   chartLeft:   { flexDirection: "row", alignItems: "center", gap: 6 },
@@ -343,7 +350,6 @@ const s = StyleSheet.create({
   chartMin:    { fontSize: 10, color: C.muted },
   chartMax:    { fontSize: 10, color: C.muted },
 
-  // Thresholds
   groupLabel:     { fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1, marginTop: 12, marginBottom: 6 },
   fieldRow:       { flexDirection: "row", gap: 8 },
   thresholdField: { flex: 1 },
@@ -353,18 +359,15 @@ const s = StyleSheet.create({
   saveBtn:     { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: C.brown, borderWidth: 1, borderColor: C.amber + "55", borderRadius: 9, padding: 12, marginTop: 14 },
   saveBtnText: { color: C.cream, fontSize: 13, fontWeight: "600" },
 
-  // Automation
   autoRow:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.border },
   autoLeft:  { flexDirection: "row", alignItems: "center", gap: 9, flex: 1 },
   autoLabel: { fontSize: 13, color: C.muted, flex: 1 },
 
-  // Device
   deviceRow:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
   deviceLabel: { fontSize: 12, color: C.muted },
   deviceValue: { fontSize: 12, fontWeight: "500", fontFamily: "monospace" },
 
-  // Action buttons
-  actionRow:    { flexDirection: "row", gap: 8 },
-  actionBtn:    { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: C.card, borderWidth: 1, borderColor: C.border2, borderRadius: 10, paddingVertical: 12 },
-  actionBtnText:{ fontSize: 12, color: C.cream3, fontWeight: "500" },
+  actionRow:     { flexDirection: "row", gap: 8 },
+  actionBtn:     { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: C.card, borderWidth: 1, borderColor: C.border2, borderRadius: 10, paddingVertical: 12 },
+  actionBtnText: { fontSize: 12, color: C.cream3, fontWeight: "500" },
 });

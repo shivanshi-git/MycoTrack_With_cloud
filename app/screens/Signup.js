@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { registerUser } from "../../firebase/authService";
+import { registerUser } from "../../aws/authService"; // ← AWS Cognito
 
 import {
   StyledContainer,
@@ -17,7 +17,7 @@ import {
   GradientButton,
   ButtonText,
   ForgotPassword,
-  ForgotPasswordText,  // 👈
+  ForgotPasswordText,
   Divider,
   DividerLine,
   DividerText,
@@ -26,18 +26,17 @@ import {
   SignUpContainer,
   SignUpText,
   SignUpLink,
-  SignUpLinkText,      // 👈
+  SignUpLinkText,
 } from "../../components/styles";
 
 const Signup = () => {
   const router = useRouter();
 
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  const [hidePassword, setHidePassword] = useState(true);
+  const [fullName,         setFullName]         = useState("");
+  const [email,            setEmail]            = useState("");
+  const [password,         setPassword]         = useState("");
+  const [confirmPassword,  setConfirmPassword]  = useState("");
+  const [hidePassword,     setHidePassword]     = useState(true);
   const [hideConfirmPassword, setHideConfirmPassword] = useState(true);
 
   const handleSignup = async () => {
@@ -45,20 +44,17 @@ const Signup = () => {
       alert("Please fill in all fields.");
       return;
     }
-
-    // FIX: Added password confirmation check before calling Firebase
     if (password !== confirmPassword) {
       alert("Passwords do not match.");
       return;
     }
-
     if (password.length < 6) {
       alert("Password must be at least 6 characters.");
       return;
     }
 
     try {
-      await registerUser(email, password);
+      await registerUser(email, password); // AWS Cognito sign-up
       router.push("/screens/Welcome");
     } catch (error) {
       alert(error.message);
@@ -76,9 +72,7 @@ const Signup = () => {
         </PageTitle>
 
         {/* FULL NAME */}
-
         <InputLabel>FULL NAME</InputLabel>
-
         <InputContainer>
           <Ionicons name="person-outline" size={20} color="#C9A98B" />
           <StyledInput
@@ -90,9 +84,7 @@ const Signup = () => {
         </InputContainer>
 
         {/* EMAIL */}
-
         <InputLabel>EMAIL</InputLabel>
-
         <InputContainer>
           <Ionicons name="mail-outline" size={20} color="#C9A98B" />
           <StyledInput
@@ -106,9 +98,7 @@ const Signup = () => {
         </InputContainer>
 
         {/* PASSWORD */}
-
         <InputLabel>PASSWORD</InputLabel>
-
         <InputContainer>
           <Ionicons name="lock-closed-outline" size={20} color="#C9A98B" />
           <StyledInput
@@ -127,9 +117,7 @@ const Signup = () => {
         </InputContainer>
 
         {/* CONFIRM PASSWORD */}
-
         <InputLabel>CONFIRM PASSWORD</InputLabel>
-
         <InputContainer>
           <Ionicons name="lock-closed-outline" size={20} color="#C9A98B" />
           <StyledInput
@@ -148,7 +136,6 @@ const Signup = () => {
         </InputContainer>
 
         {/* CREATE ACCOUNT BUTTON */}
-
         <ButtonContainer onPress={handleSignup}>
           <GradientButton
             colors={["#A65E1B", "#D88A2E"]}
@@ -159,12 +146,10 @@ const Signup = () => {
           </GradientButton>
         </ButtonContainer>
 
-        {/* SIGN IN LINK */}
-
         <SignUpContainer>
           <SignUpText>Already registered?</SignUpText>
           <SignUpLink onPress={() => router.push("/screens/Login")}>
-             <SignUpLinkText>Sign in</SignUpLinkText>
+            <SignUpLinkText>Sign in</SignUpLinkText>
           </SignUpLink>
         </SignUpContainer>
 

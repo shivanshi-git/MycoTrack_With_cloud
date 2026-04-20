@@ -1,7 +1,7 @@
 /**
  * Monitoring.js
- * Actuator Control Panel — styled to match MycoTrack dark amber theme
- * Content ported from index.tsx (Control Panel)
+ * Actuator Control Panel — MycoTrack dark amber theme
+ * Migrated: Firebase RTDB → AWS IoT Core / DynamoDB via dbService
  */
 
 import React, { useState, useEffect } from "react";
@@ -17,32 +17,27 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { ref, set, onValue } from "firebase/database";
-import { db } from "../../firebase/firebaseConfig";
+import { setActuator, getActuatorStates } from "../../aws/dbService"; // ← AWS
 import { useRouter } from "expo-router";
 import { BottomNav } from "./Dashboard";
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
 const C = {
-  bg:      "#f9fafb",   // main background (soft white)
-  card:    "#ffffff",   // card background
-  border:  "#e5e7eb",   // light border
-  border2: "#d1d5db",   // slightly stronger border
-
-  amber:   "#d97706",   // primary accent
-  amber2:  "#f59e0b",   // highlight accent
-  brown:   "#92400e",   // darker accent
-
-  cream:   "#1f2937",   // main text (dark grey)
-  cream2:  "#374151",   // secondary text
-  cream3:  "#6b7280",   // tertiary text
-
-  muted:   "#9ca3af",   // muted text
-
-  healthy: "#16a34a",   // green
-  warning: "#f59e0b",   // amber
-  danger:  "#dc2626",   // red
+  bg:      "#f9fafb",
+  card:    "#ffffff",
+  border:  "#e5e7eb",
+  border2: "#d1d5db",
+  amber:   "#d97706",
+  amber2:  "#f59e0b",
+  brown:   "#92400e",
+  cream:   "#1f2937",
+  cream2:  "#374151",
+  cream3:  "#6b7280",
+  muted:   "#9ca3af",
+  healthy: "#16a34a",
+  warning: "#f59e0b",
+  danger:  "#dc2626",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -61,10 +56,12 @@ function ActuatorCard({ icon, title, subtitle, value, onToggle, runtime, mode, o
 
   return (
     <View style={s.card}>
-      {/* Header row */}
       <View style={s.cardRow}>
         <View style={s.cardLeft}>
-          <View style={[s.iconBox, { borderColor: isOn ? C.amber + "88" : C.border2, backgroundColor: isOn ? C.brown + "55" : C.border + "66" }]}>
+          <View style={[s.iconBox, {
+            borderColor:     isOn ? C.amber + "88" : C.border2,
+            backgroundColor: isOn ? C.brown + "55" : C.border + "66",
+          }]}>
             <Ionicons name={icon} size={18} color={isOn ? C.amber2 : C.muted} />
           </View>
           <View>
@@ -82,14 +79,17 @@ function ActuatorCard({ icon, title, subtitle, value, onToggle, runtime, mode, o
 
       <View style={s.divider} />
 
-      {/* Status & mode row */}
       <View style={s.metaRow}>
-        <View style={[s.statusBadge, { borderColor: isOn ? C.healthy + "55" : C.border2, backgroundColor: isOn ? C.healthy + "18" : "transparent" }]}>
+        <View style={[s.statusBadge, {
+          borderColor:     isOn ? C.healthy + "55" : C.border2,
+          backgroundColor: isOn ? C.healthy + "18" : "transparent",
+        }]}>
           <View style={[s.statusDot, { backgroundColor: isOn ? C.healthy : C.muted }]} />
-          <Text style={[s.statusText, { color: isOn ? C.healthy : C.muted }]}>{isOn ? "ON" : "OFF"}</Text>
+          <Text style={[s.statusText, { color: isOn ? C.healthy : C.muted }]}>
+            {isOn ? "ON" : "OFF"}
+          </Text>
         </View>
 
-        {/* Mode pill toggle */}
         <TouchableOpacity style={s.modePill} onPress={onModeToggle}>
           <Text style={s.modeLabel}>Mode</Text>
           <View style={s.modeVal}>
@@ -99,7 +99,6 @@ function ActuatorCard({ icon, title, subtitle, value, onToggle, runtime, mode, o
         </TouchableOpacity>
       </View>
 
-      {/* Runtime */}
       {isOn && (
         <View style={s.runtimeRow}>
           <Ionicons name="flash-outline" size={11} color={C.amber} />
@@ -115,25 +114,25 @@ function ActuatorCard({ icon, title, subtitle, value, onToggle, runtime, mode, o
 export default function Monitoring() {
   const router = useRouter();
 
-  const [master,      setMaster]      = useState(true);
-  const [fan,         setFan]         = useState(true);
-  const [pump,        setPump]        = useState(false);
-  const [humidifier,  setHumidifier]  = useState(true);
+  const [master,     setMaster]     = useState(true);
+  const [fan,        setFan]        = useState(true);
+  const [pump,       setPump]       = useState(false);
+  const [humidifier, setHumidifier] = useState(true);
 
   const [fanMode,        setFanMode]        = useState("Auto");
   const [pumpMode,       setPumpMode]       = useState("Manual");
   const [humidifierMode, setHumidifierMode] = useState("Auto");
 
-  const [fanTime,       setFanTime]       = useState(0);
-  const [pumpTime,      setPumpTime]      = useState(0);
+  const [fanTime,        setFanTime]        = useState(0);
+  const [pumpTime,       setPumpTime]       = useState(0);
   const [humidifierTime, setHumidifierTime] = useState(0);
 
-  const [editing,       setEditing]       = useState(false);
-  const [fanSchedule,   setFanSchedule]   = useState("06:00 - 18:00");
-  const [pumpSchedule,  setPumpSchedule]  = useState("Every 4 hours (15 min)");
-  const [humidSchedule, setHumidSchedule] = useState("< 80% humidity");
+  const [editing,      setEditing]      = useState(false);
+  const [fanSchedule,  setFanSchedule]  = useState("06:00 - 18:00");
+  const [pumpSchedule, setPumpSchedule] = useState("Every 4 hours (15 min)");
+  const [humidSchedule,setHumidSchedule]= useState("< 80% humidity");
 
-  // Runtime counters
+  // ── Runtime counters ────────────────────────────────────────────────────────
   useEffect(() => {
     const interval = setInterval(() => {
       if (fan)        setFanTime((t) => t + 1);
@@ -143,25 +142,45 @@ export default function Monitoring() {
     return () => clearInterval(interval);
   }, [fan, pump, humidifier]);
 
-  // Firebase sync
+  // ── AWS: poll actuator states from DynamoDB every 10s ──────────────────────
   useEffect(() => {
-    if (!db) return;
-    const unsub1 = onValue(ref(db, "actuators/pump"),       (s) => { if (s.exists()) setPump(s.val()); });
-    const unsub2 = onValue(ref(db, "actuators/humidifier"), (s) => { if (s.exists()) setHumidifier(s.val()); });
-    const unsub3 = onValue(ref(db, "actuators/fan"),        (s) => { if (s.exists()) setFan(s.val()); });
-    return () => { unsub1(); unsub2(); unsub3(); };
+    const fetchStates = async () => {
+      try {
+        const states = await getActuatorStates("house_1");
+        if (states?.fan        !== undefined) setFan(states.fan);
+        if (states?.pump       !== undefined) setPump(states.pump);
+        if (states?.humidifier !== undefined) setHumidifier(states.humidifier);
+        if (states?.fanMode    !== undefined) setFanMode(states.fanMode);
+        if (states?.pumpMode   !== undefined) setPumpMode(states.pumpMode);
+        if (states?.humidifierMode !== undefined) setHumidifierMode(states.humidifierMode);
+      } catch (err) {
+        console.warn("Failed to fetch actuator states:", err);
+      }
+    };
+    fetchStates();
+    const interval = setInterval(fetchStates, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  const toggleMode = (current, setter, fbPath) => {
-    const next = current === "Auto" ? "Manual" : "Auto";
-    setter(next);
-    if (db) set(ref(db, fbPath), next);
+  // ── AWS: toggle actuator via IoT Core / DynamoDB ───────────────────────────
+  const toggleActuator = async (val, setter, key, resetTimer) => {
+    setter(val);
+    if (!val) resetTimer(0);
+    try {
+      await setActuator("house_1", key, val);
+    } catch (err) {
+      console.warn(`Failed to update actuator [${key}]:`, err);
+    }
   };
 
-  const toggleActuator = (val, setter, fbPath, resetTimer) => {
-    setter(val);
-    if (db) set(ref(db, fbPath), val);
-    if (!val) resetTimer(0);
+  const toggleMode = async (current, setter, key) => {
+    const next = current === "Auto" ? "Manual" : "Auto";
+    setter(next);
+    try {
+      await setActuator("house_1", key, next);
+    } catch (err) {
+      console.warn(`Failed to update mode [${key}]:`, err);
+    }
   };
 
   return (
@@ -181,7 +200,10 @@ export default function Monitoring() {
           <View style={s.card}>
             <View style={s.cardRow}>
               <View style={s.cardLeft}>
-                <View style={[s.iconBox, { borderColor: master ? C.amber + "88" : C.border2, backgroundColor: master ? C.brown + "55" : C.border + "66" }]}>
+                <View style={[s.iconBox, {
+                  borderColor:     master ? C.amber + "88" : C.border2,
+                  backgroundColor: master ? C.brown + "55" : C.border + "66",
+                }]}>
                   <Ionicons name="power-outline" size={18} color={master ? C.amber2 : C.muted} />
                 </View>
                 <View>
@@ -204,10 +226,10 @@ export default function Monitoring() {
             title="5V DC Fan"
             subtitle="5V DC"
             value={fan}
-            onToggle={(val) => toggleActuator(val, setFan, "actuators/fan", setFanTime)}
+            onToggle={(val) => toggleActuator(val, setFan, "fan", setFanTime)}
             runtime={fanTime}
             mode={fanMode}
-            onModeToggle={() => toggleMode(fanMode, setFanMode, "actuators/fanMode")}
+            onModeToggle={() => toggleMode(fanMode, setFanMode, "fanMode")}
           />
 
           {/* ── Pump ── */}
@@ -216,10 +238,10 @@ export default function Monitoring() {
             title="Water Pump"
             subtitle="12V DC"
             value={pump}
-            onToggle={(val) => toggleActuator(val, setPump, "actuators/pump", setPumpTime)}
+            onToggle={(val) => toggleActuator(val, setPump, "pump", setPumpTime)}
             runtime={pumpTime}
             mode={pumpMode}
-            onModeToggle={() => toggleMode(pumpMode, setPumpMode, "actuators/pumpMode")}
+            onModeToggle={() => toggleMode(pumpMode, setPumpMode, "pumpMode")}
           />
 
           {/* ── Humidifier ── */}
@@ -228,10 +250,10 @@ export default function Monitoring() {
             title="Humidifier"
             subtitle="220V AC"
             value={humidifier}
-            onToggle={(val) => toggleActuator(val, setHumidifier, "actuators/humidifier", setHumidifierTime)}
+            onToggle={(val) => toggleActuator(val, setHumidifier, "humidifier", setHumidifierTime)}
             runtime={humidifierTime}
             mode={humidifierMode}
-            onModeToggle={() => toggleMode(humidifierMode, setHumidifierMode, "actuators/humidifierMode")}
+            onModeToggle={() => toggleMode(humidifierMode, setHumidifierMode, "humidifierMode")}
           />
 
           {/* ── Schedule ── */}
@@ -253,15 +275,15 @@ export default function Monitoring() {
                 <>
                   <View style={s.scheduleEditRow}>
                     <Ionicons name="aperture-outline" size={12} color={C.muted} />
-                    <TextInput value={fanSchedule}   onChangeText={setFanSchedule}   style={s.scheduleInput} placeholderTextColor={C.muted} />
+                    <TextInput value={fanSchedule}    onChangeText={setFanSchedule}    style={s.scheduleInput} placeholderTextColor={C.muted} />
                   </View>
                   <View style={s.scheduleEditRow}>
-                    <Ionicons name="water-outline"   size={12} color={C.muted} />
-                    <TextInput value={pumpSchedule}  onChangeText={setPumpSchedule}  style={s.scheduleInput} placeholderTextColor={C.muted} />
+                    <Ionicons name="water-outline"    size={12} color={C.muted} />
+                    <TextInput value={pumpSchedule}   onChangeText={setPumpSchedule}   style={s.scheduleInput} placeholderTextColor={C.muted} />
                   </View>
                   <View style={s.scheduleEditRow}>
-                    <Ionicons name="cloud-outline"   size={12} color={C.muted} />
-                    <TextInput value={humidSchedule} onChangeText={setHumidSchedule} style={s.scheduleInput} placeholderTextColor={C.muted} />
+                    <Ionicons name="cloud-outline"    size={12} color={C.muted} />
+                    <TextInput value={humidSchedule}  onChangeText={setHumidSchedule}  style={s.scheduleInput} placeholderTextColor={C.muted} />
                   </View>
                 </>
               ) : (
@@ -314,10 +336,10 @@ const s = StyleSheet.create({
 
   divider: { height: 1, backgroundColor: C.border, marginVertical: 10 },
 
-  metaRow:    { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  statusBadge:{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
-  statusDot:  { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 11, fontWeight: "600" },
+  metaRow:     { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  statusBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  statusDot:   { width: 6, height: 6, borderRadius: 3 },
+  statusText:  { fontSize: 11, fontWeight: "600" },
 
   modePill:    { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.border + "88", borderWidth: 1, borderColor: C.border2, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
   modeLabel:   { fontSize: 10, color: C.muted },
@@ -330,10 +352,10 @@ const s = StyleSheet.create({
   editBtn:     { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: C.border2 },
   editBtnText: { fontSize: 11, color: C.muted, fontWeight: "500" },
 
-  scheduleRow:      { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
-  scheduleLeft:     { flexDirection: "row", alignItems: "center", gap: 7 },
-  scheduleLabel:    { fontSize: 12, color: C.muted },
-  scheduleVal:      { fontSize: 12, color: C.cream3, fontFamily: "monospace", flex: 1, textAlign: "right" },
-  scheduleEditRow:  { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: C.border2, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 2 },
-  scheduleInput:    { flex: 1, fontSize: 12, color: C.cream2, paddingVertical: 6 },
+  scheduleRow:     { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
+  scheduleLeft:    { flexDirection: "row", alignItems: "center", gap: 7 },
+  scheduleLabel:   { fontSize: 12, color: C.muted },
+  scheduleVal:     { fontSize: 12, color: C.cream3, fontFamily: "monospace", flex: 1, textAlign: "right" },
+  scheduleEditRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: C.border2, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 2 },
+  scheduleInput:   { flex: 1, fontSize: 12, color: C.cream2, paddingVertical: 6 },
 });

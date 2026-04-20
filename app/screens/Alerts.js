@@ -14,8 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, onValue, update } from "firebase/database";
-import { db } from "../../firebase/firebaseConfig";  // ← fix: match your actual path
+import { getAlerts, markAlertRead } from "../../aws/dbService";
 import { useRouter } from "expo-router";
 import { BottomNav } from "./Dashboard";
 
@@ -146,24 +145,32 @@ export default function Alerts() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [pushEnabled,  setPushEnabled]  = useState(true);
 
-  // Firebase subscription — only runs when db is properly initialised
-  useEffect(() => {
-    if (!db) return;
-    const alertsRef = ref(db, "mushroom_farm/house_1/alerts");
-    const unsub = onValue(alertsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const parsed = Object.entries(data).map(([id, val]) => ({ id, ...val }));
-        setAlerts(parsed.sort((a, b) => (a.read ? 1 : -1)));
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  const handleMarkRead = (id) => {
-    setAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, read: true } : a)));
-    if (db) update(ref(db, `mushroom_farm/house_1/alerts/${id}`), { read: true });
+  // AWS
+// ✅ ADD
+useEffect(() => {
+  const fetchAlerts = async () => {
+    try {
+      const data = await getAlerts("house_1");
+      if (data && data.length > 0)
+        setAlerts(data.sort((a, b) => (a.read ? 1 : -1)));
+    } catch (err) {
+      console.warn("Failed to fetch alerts:", err);
+    }
   };
+  fetchAlerts();
+  const interval = setInterval(fetchAlerts, 30000); // poll every 30s
+  return () => clearInterval(interval);
+}, []);
+
+  // ✅ ADD
+const handleMarkRead = async (id) => {
+  setAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, read: true } : a)));
+  try {
+    await markAlertRead("house_1", id);
+  } catch (err) {
+    console.warn("Failed to mark alert read:", err);
+  }
+};
 
   const filters  = ["All", "Environmental", "AI Detection", "System"];
   const filtered = activeFilter === "All"

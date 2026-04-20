@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { loginUser } from "../../firebase/authService";
+import { loginUser } from "../../aws/authService"; // ← AWS Cognito
+
 import {
   StyledContainer,
   InnerContainer,
@@ -16,7 +17,7 @@ import {
   GradientButton,
   ButtonText,
   ForgotPassword,
-  ForgotPasswordText,  // 👈
+  ForgotPasswordText,
   Divider,
   DividerLine,
   DividerText,
@@ -25,14 +26,14 @@ import {
   SignUpContainer,
   SignUpText,
   SignUpLink,
-  SignUpLinkText,      // 👈
+  SignUpLinkText,
 } from "../../components/styles";
 
 const Login = () => {
   const router = useRouter();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email,        setEmail]        = useState("");
+  const [password,     setPassword]     = useState("");
   const [hidePassword, setHidePassword] = useState(true);
 
   const handleLogin = async () => {
@@ -42,7 +43,7 @@ const Login = () => {
     }
 
     try {
-      await loginUser(email, password);
+      await loginUser(email, password); // AWS Cognito sign-in
       router.push("/screens/Welcome");
     } catch (error) {
       alert(error.message);
@@ -64,10 +65,8 @@ const Login = () => {
           Sign into <Highlight>MycoTrack</Highlight>
         </PageTitle>
 
-        {/* EMAIL INPUT */}
-
+        {/* EMAIL */}
         <InputLabel>EMAIL</InputLabel>
-
         <InputContainer>
           <Ionicons name="mail-outline" size={20} color="#C9A98B" />
           <StyledInput
@@ -80,10 +79,8 @@ const Login = () => {
           />
         </InputContainer>
 
-        {/* PASSWORD INPUT */}
-
+        {/* PASSWORD */}
         <InputLabel>PASSWORD</InputLabel>
-
         <InputContainer>
           <Ionicons name="lock-closed-outline" size={20} color="#C9A98B" />
           <StyledInput
@@ -101,14 +98,11 @@ const Login = () => {
           />
         </InputContainer>
 
-        {/* FIX: ForgotPassword styled component already handles onPress as TouchableOpacity in styles.js
-            but was missing the onPress prop — now properly wired */}
         <ForgotPassword onPress={() => router.push("/screens/ForgotPassword")}>
-        <ForgotPasswordText>Forgot password?</ForgotPasswordText>
+          <ForgotPasswordText>Forgot password?</ForgotPasswordText>
         </ForgotPassword>
 
         {/* LOGIN BUTTON */}
-
         <ButtonContainer onPress={handleLogin}>
           <GradientButton
             colors={["#A65E1B", "#D88A2E"]}
