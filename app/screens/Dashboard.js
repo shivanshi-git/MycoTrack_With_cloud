@@ -555,6 +555,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import { checkAlerts } from "../../services/alerts";
+import { useAlerts } from "../../context/AlertContext";
+
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -737,6 +740,7 @@ export function BottomNav({ active, router }) {
 export default function Dashboard() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const { setAlerts } = useAlerts();
 
   // ── Live sensor state ──────────────────────────────────────────────────────
   const [sensors, setSensors] = useState(DUMMY_DATA.sensors);
@@ -760,6 +764,19 @@ export default function Dashboard() {
             history: newHistory,
           };
         });
+        const newData = {
+        temperature: next.temperature?.value,
+        humidity: next.humidity?.value,
+        soilMoisture: next.soilMoisture?.value,
+        co2: next.co2?.value,
+      };
+
+      const newAlerts = checkAlerts(newData);
+
+      if (newAlerts.length > 0) {
+        setAlerts(prev => [...newAlerts, ...prev]);
+      }
+      // 
         return next;
       });
       // Update timestamp

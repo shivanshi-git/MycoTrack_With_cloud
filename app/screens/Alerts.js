@@ -329,9 +329,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { getAlerts, markAlertRead } from "../../src/AWS/dbService";
 import { useRouter } from "expo-router";
 import { BottomNav } from "../screens/Dashboard";
+import { useAlerts } from "../../context/AlertContext";
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -355,55 +355,6 @@ const C = {
   warning: "#f59e0b",   // amber
   danger:  "#dc2626",   // red
 };
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const MOCK_ALERTS = [
-  {
-    id: "1",
-    title: "Disease Detected",
-    description: "AI camera detected possible infection in growing area. Confidence: 87.3%",
-    category: "AI Detection",
-    severity: "critical",
-    time: "2h ago",
-    read: false,
-  },
-  {
-    id: "2",
-    title: "High Temperature",
-    description: "Temperature exceeded threshold: 26°C (Max: 25°C)",
-    category: "Environmental",
-    severity: "warning",
-    time: "5h ago",
-    read: false,
-  },
-  {
-    id: "3",
-    title: "Low Humidity",
-    description: "Humidity dropped to 75% (Min: 80%). Humidifier activated.",
-    category: "Environmental",
-    severity: "warning",
-    time: "8h ago",
-    read: true,
-  },
-  {
-    id: "4",
-    title: "Water Pump Activated",
-    description: "Scheduled watering cycle completed successfully.",
-    category: "System",
-    severity: "info",
-    time: "12h ago",
-    read: true,
-  },
-  {
-    id: "5",
-    title: "CO₂ Level High",
-    description: "CO₂ concentration: 850 ppm (Max: 800 ppm). Ventilation increased.",
-    category: "Environmental",
-    severity: "warning",
-    time: "1d ago",
-    read: true,
-  },
-];
 
 // ─── Severity Config ──────────────────────────────────────────────────────────
 
@@ -456,26 +407,9 @@ function AlertCard({ alert, onMarkRead }) {
 
 export default function Alerts() {
   const router = useRouter();
-  const [alerts,       setAlerts]       = useState(MOCK_ALERTS);
+  const { alerts, setAlerts } = useAlerts();
   const [activeFilter, setActiveFilter] = useState("All");
   const [pushEnabled,  setPushEnabled]  = useState(true);
-
-  // AWS
-// ✅ ADD
-useEffect(() => {
-  const fetchAlerts = async () => {
-    try {
-      const data = await getAlerts("house_1");
-      if (data && data.length > 0)
-        setAlerts(data.sort((a, b) => (a.read ? 1 : -1)));
-    } catch (err) {
-      console.warn("Failed to fetch alerts:", err);
-    }
-  };
-  fetchAlerts();
-  const interval = setInterval(fetchAlerts, 30000); // poll every 30s
-  return () => clearInterval(interval);
-}, []);
 
   // ✅ ADD
 const handleMarkRead = async (id) => {
