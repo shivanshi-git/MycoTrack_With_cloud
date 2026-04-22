@@ -4,7 +4,7 @@
  * Connected to AWS IoT via API Gateway
  */
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -201,12 +201,11 @@ export function BottomNav({ active, router }) {
 export default function Dashboard() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState(null);
   const [lastUpdated, setLastUpdated] = useState("--");
-  const [isOnline, setIsOnline] = useState(false);
+  const [isOnline, setIsOnline]     = useState(false);
 
-  // Sensor state with history arrays for sparklines
   const [sensors, setSensors] = useState({
     temperature: { value: null, unit: "°C",   status: "normal", icon: "thermometer-outline", label: "Temperature",   history: [] },
     humidity:    { value: null, unit: "%",    status: "normal", icon: "water-outline",       label: "Humidity",      history: [] },
@@ -216,6 +215,7 @@ export default function Dashboard() {
 
   const [actuators, setActuators] = useState({ fan: "--", motor: "--" });
 
+  // ── Fetch — flat API response: { temperature, humidity, soil, co2, fan, motor }
   const fetchData = async () => {
     try {
       setError(null);
@@ -223,38 +223,36 @@ export default function Dashboard() {
       const json = await response.json();
       const data = typeof json.body === "string" ? JSON.parse(json.body) : json.body;
 
-      // Extract values
-      const temp  = parseFloat(data?.temperature?.temperature ?? null);
-      const hum   = parseFloat(data?.humidity?.humidity ?? null);
-      const soil  = parseFloat(data?.soil?.soil ?? null);
-      const co2   = parseFloat(data?.co2?.co2 ?? null);
-      const fan   = data?.fan?.fan || "--";
-      const motor = data?.motor?.motor || "--";
+      const temp  = parseFloat(data?.temperature ?? null);
+      const hum   = parseFloat(data?.humidity    ?? null);
+      const soil  = parseFloat(data?.soil        ?? null);
+      const co2   = parseFloat(data?.co2         ?? null);
+      const fan   = data?.fan   || "--";
+      const motor = data?.motor || "--";
 
-      // Update sensors with new values + append to history
       setSensors((prev) => ({
         temperature: {
           ...prev.temperature,
-          value: isNaN(temp) ? null : Math.round(temp * 10) / 10,
-          status: deriveStatus("temperature", temp),
+          value:   isNaN(temp) ? null : Math.round(temp * 10) / 10,
+          status:  deriveStatus("temperature", temp),
           history: [...prev.temperature.history.slice(-11), temp],
         },
         humidity: {
           ...prev.humidity,
-          value: isNaN(hum) ? null : Math.round(hum * 10) / 10,
-          status: deriveStatus("humidity", hum),
+          value:   isNaN(hum) ? null : Math.round(hum * 10) / 10,
+          status:  deriveStatus("humidity", hum),
           history: [...prev.humidity.history.slice(-11), hum],
         },
         soil: {
           ...prev.soil,
-          value: isNaN(soil) ? null : Math.round(soil),
-          status: deriveStatus("soil", soil),
+          value:   isNaN(soil) ? null : Math.round(soil),
+          status:  deriveStatus("soil", soil),
           history: [...prev.soil.history.slice(-11), soil],
         },
         co2: {
           ...prev.co2,
-          value: isNaN(co2) ? null : Math.round(co2),
-          status: deriveStatus("co2", co2),
+          value:   isNaN(co2) ? null : Math.round(co2),
+          status:  deriveStatus("co2", co2),
           history: [...prev.co2.history.slice(-11), co2],
         },
       }));
@@ -341,8 +339,8 @@ export default function Dashboard() {
 
           {/* ── Actuator Cards ── */}
           <Text style={s.sectionLabel}>ACTUATORS</Text>
-          <ActuatorCard label="Fan" status={actuators.fan} icon="aperture-outline" />
-          <ActuatorCard label="Water Motor" status={actuators.motor} icon="water-outline" />
+          <ActuatorCard label="Fan"         status={actuators.fan}   icon="aperture-outline" />
+          <ActuatorCard label="Water Motor" status={actuators.motor} icon="water-outline"    />
 
           <View style={{ height: 20 }} />
         </ScrollView>
