@@ -136,44 +136,11 @@ void handleCapture() {
 }
 
 void handleRoot() {
-  String html = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><style>";
-  html += "body { font-family: sans-serif; text-align: center; background: #121212; color: white; padding: 20px; }";
-  html += ".btn { display: inline-block; padding: 15px 30px; margin: 10px; background: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }";
-  html += ".btn-blue { background: #2196F3; }";
-  html += "h1 { color: #4CAF50; }";
-  html += "</style></head><body>";
-  html += "<h1>🍄 MycoTrack AI Cam</h1>";
-  html += "<p><b>Status:</b> " + String(mqttClient.connected() ? "✅ Cloud Connected" : "❌ Disconnected") + "</p>";
-  html += "<p><b>IP Address:</b> " + WiFi.localIP().toString() + "</p>";
-  
-  html += "<a href='/capture' class='btn' target='_blank'>📷 VIEW IMAGE</a><br>";
-  html += "<a href='/ai-scan' class='btn btn-blue'>🧠 SCAN WITH AI</a>";
-  
-  html += "<p style='margin-top:40px; font-size: 0.8em; color: #888;'>Topic: mycotrack/esp32_cam_001/trigger</p>";
-  html += "</body></html>";
-  server.send(200, "text/html", html);
-}
-
-void handleAIScan() {
-  server.sendHeader("Connection", "close");
-  
-  camera_fb_t * fb = esp_camera_fb_get();
-  if(!fb) {
-    server.send(500, "text/plain", "Camera capture failed");
-    return;
-  }
-  
-  String result = uploadImageToEC2(fb);
-  esp_camera_fb_return(fb);
-  
-  String html = "<html><body style='font-family:sans-serif; text-align:center; background:#121212; color:white; padding:50px;'>";
-  html += "<h1>🧠 AI Classification Result</h1>";
-  html += "<div style='background:#222; padding:30px; border-radius:10px; border: 1px solid #4CAF50; display:inline-block; text-align:left;'>";
-  html += "<pre style='color:#4CAF50; font-size:1.2em;'>" + result + "</pre>";
-  html += "</div><br><br>";
-  html += "<a href='/' style='color:#4CAF50; text-decoration:none;'>← Back to Home</a>";
-  html += "</body></html>";
-  
+  String html = "<h1>MycoTrack ESP32-CAM</h1>";
+  html += "<p>MQTT Status: " + String(mqttClient.connected() ? "Connected" : "Disconnected") + "</p>";
+  html += "<p>IP Address: " + WiFi.localIP().toString() + "</p>";
+  html += "<a href='/capture' target='_blank'>[ VIEW LIVE PHOTO ]</a><br><br>";
+  html += "<small>Trigger MQTT topic <b>mycotrack/esp32_cam_001/trigger</b> to send to EC2</small>";
   server.send(200, "text/html", html);
 }
 
@@ -261,8 +228,7 @@ void initCamera() {
   }
 }
 
-String uploadImageToEC2(camera_fb_t *fb) {
-  String response = "No response";
+void uploadImageToEC2(camera_fb_t *fb) {
   HTTPClient http;
   WiFiClient client;
 
@@ -279,7 +245,7 @@ String uploadImageToEC2(camera_fb_t *fb) {
   uint8_t *body = (uint8_t *)malloc(totalLen);
   if (!body) {
     Serial.println("Failed to allocate upload buffer");
-    return;
+    return "Memory Allocation Error";
   }
 
   // Copy head + image + tail into body
@@ -293,16 +259,14 @@ String uploadImageToEC2(camera_fb_t *fb) {
   Serial.printf("EC2 Upload Response Code: %d\n", httpResponseCode);
 
   if (httpResponseCode > 0) {
-    response = http.getString();
+    String response = http.getString();
     Serial.println("Response: " + response);
   } else {
-    response = "Upload error: " + http.errorToString(httpResponseCode);
-    Serial.println(response);
+    Serial.printf("Upload error: %s\n", http.errorToString(httpResponseCode).c_str());
   }
 
   free(body);
   http.end();
-  return response;
 }
 
 void messageHandler(char* topic, byte* payload, unsigned int length) {
@@ -340,7 +304,6 @@ void setup() {
 
   server.on("/", handleRoot);
   server.on("/capture", handleCapture);
-  server.on("/ai-scan", handleAIScan);
   server.begin();
   Serial.println("Web Server started!");
 }
