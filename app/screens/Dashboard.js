@@ -1,7 +1,7 @@
 /**
  * Dashboard.js
  * Mushroom Farm Dashboard — styled to match MycoTrack dark amber theme
- * Connected to AWS IoT via API Gateway
+ * Integrated with AWS IoT Core, API Gateway & DynamoDB
  */
 
 import React, { useState, useCallback, useEffect } from "react";
@@ -20,11 +20,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 
 // ─── AWS API ──────────────────────────────────────────────────────────────────
-
 const API_URL = "https://lvcnlqo6wa.execute-api.ap-south-1.amazonaws.com/prod/sensordata";
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
-
 const C = {
   bg:      "#f9fafb",
   card:    "#ffffff",
@@ -43,7 +41,6 @@ const C = {
 };
 
 // ─── Sensor Ranges ────────────────────────────────────────────────────────────
-
 const SENSOR_RANGES = {
   temperature: { min: 18, max: 28 },
   humidity:    { min: 75, max: 95 },
@@ -61,35 +58,33 @@ function deriveStatus(key, value) {
   return "normal";
 }
 
-// ─── Sparkline ────────────────────────────────────────────────────────────────
+// ─── UI Components ────────────────────────────────────────────────────────────
 
 function Sparkline({ data = [], color = C.amber }) {
   if (!data || data.length < 2) return null;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+  const filteredData = data.filter(v => v !== null && v !== undefined);
+  if (filteredData.length < 2) return null;
+  
+  const min   = Math.min(...filteredData);
+  const max   = Math.max(...filteredData);
   const range = max - min || 1;
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-end", height: 32, gap: 2 }}>
-      {data.map((v, i) => {
-        const barH = Math.max(4, ((v - min) / range) * 32);
-        return (
-          <View
-            key={i}
-            style={{
-              flex: 1,
-              height: barH,
-              backgroundColor: color,
-              borderRadius: 2,
-              opacity: 0.4 + (i / data.length) * 0.6,
-            }}
-          />
-        );
-      })}
+      {data.map((v, i) => (
+        <View
+          key={i}
+          style={{
+            flex: 1,
+            height: v === null ? 2 : Math.max(4, ((v - min) / range) * 32),
+            backgroundColor: v === null ? C.border : color,
+            borderRadius: 2,
+            opacity: 0.4 + (i / data.length) * 0.6,
+          }}
+        />
+      ))}
     </View>
   );
 }
-
-// ─── Status Badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
   const map = {
@@ -105,21 +100,19 @@ function StatusBadge({ status }) {
   );
 }
 
-// ─── Sensor Card ──────────────────────────────────────────────────────────────
-
 function SensorCard({ data }) {
   const { value, unit, status, icon, label, history } = data;
   const sparkColor = status === "warning" ? C.warning : status === "danger" ? C.danger : C.amber;
   return (
-    <View style={s.card}>
+    <View style={[s.card, status === "danger" && { borderColor: C.danger + "66" }]}>
       <View style={s.sensorHeader}>
         <View style={s.sensorLeft}>
-          <View style={s.iconBox}>
-            <Ionicons name={icon} size={18} color={C.amber} />
+          <View style={[s.iconBox, status === "danger" && { backgroundColor: C.danger + "22" }]}>
+            <Ionicons name={icon} size={18} color={status === "danger" ? C.danger : C.amber} />
           </View>
           <View>
             <Text style={s.sensorLabel}>{label}</Text>
-            <Text style={s.sensorValue}>
+            <Text style={[s.sensorValue, status === "danger" && { color: C.danger }]}>
               {value !== null && value !== undefined ? `${value}${unit}` : "—"}
             </Text>
           </View>
@@ -134,10 +127,8 @@ function SensorCard({ data }) {
   );
 }
 
-// ─── Actuator Card ────────────────────────────────────────────────────────────
-
 function ActuatorCard({ label, status, icon }) {
-  const isOn = status === "ON";
+  const isOn = status === "ON" || status === true;
   return (
     <View style={[s.card, { borderLeftWidth: 4, borderLeftColor: isOn ? C.healthy : C.danger }]}>
       <View style={s.statusRow}>
@@ -149,7 +140,7 @@ function ActuatorCard({ label, status, icon }) {
         </View>
         <View style={[s.badge, { borderColor: (isOn ? C.healthy : C.danger) + "55", backgroundColor: (isOn ? C.healthy : C.danger) + "18" }]}>
           <Text style={[s.badgeText, { color: isOn ? C.healthy : C.danger }]}>
-            {status || "--"}
+            {isOn ? "ON" : "OFF"}
           </Text>
         </View>
       </View>
@@ -160,6 +151,22 @@ function ActuatorCard({ label, status, icon }) {
 // ─── Bottom Nav ───────────────────────────────────────────────────────────────
 
 export function BottomNav({ active, router }) {
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const fetchUnread = async () => {
+      try {
+        const alerts = await getAlerts("house_1");
+        setUnreadCount(alerts.filter((a) => !a.read).length);
+      } catch (err) {
+        // fail silently for badge
+      }
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const items = [
     { key: "dashboard",  icon: "home-outline",        label: "Dashboard",  route: "/screens/Dashboard"  },
     { key: "monitoring", icon: "pulse-outline",        label: "Monitoring", route: "/screens/Monitoring" },
@@ -175,7 +182,7 @@ export function BottomNav({ active, router }) {
             <View key="camera" style={s.ncw}>
               <TouchableOpacity onPress={() => router.push(item.route)}>
                 <LinearGradient
-                  colors={[C.brown, C.amber]}
+                   colors={[C.brown, C.amber]}
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                   style={[s.ncb, active === "camera" && { borderColor: C.amber2 }]}
                 >
@@ -185,9 +192,19 @@ export function BottomNav({ active, router }) {
             </View>
           );
         }
+        const isAlerts  = item.key === "alerts";
+        const showBadge = isAlerts && unreadCount > 0;
+
         return (
           <TouchableOpacity key={item.key} style={s.ni} onPress={() => router.push(item.route)}>
-            <Ionicons name={item.icon} size={18} color={active === item.key ? C.amber2 : C.muted} />
+            <View>
+              <Ionicons name={item.icon} size={18} color={active === item.key ? C.amber2 : C.muted} />
+              {showBadge && (
+                <View style={s.badge2}>
+                  <Text style={s.badge2Text}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
+                </View>
+              )}
+            </View>
             <Text style={[s.nl, active === item.key && { color: C.amber2 }]}>{item.label}</Text>
           </TouchableOpacity>
         );
@@ -215,10 +232,10 @@ export default function Dashboard() {
 
   const [actuators, setActuators] = useState({ fan: "--", motor: "--" });
 
-  // ── Fetch — flat API response: { temperature, humidity, soil, co2, fan, motor }
   const fetchData = async () => {
     try {
       setError(null);
+      // 1. Fetch from Tanvi's API
       const response = await fetch(API_URL);
       const json = await response.json();
       const data = typeof json.body === "string" ? JSON.parse(json.body) : json.body;
@@ -257,13 +274,23 @@ export default function Dashboard() {
         },
       }));
 
-      setActuators({ fan, motor });
+      // 2. Fetch actuators from dbService if API doesn't have them
+      if (fan === "--" || motor === "--") {
+          const states = await getActuatorStates("house_1");
+          if (states) {
+            setActuators({
+              fan: fan !== "--" ? fan : (states.fan ? "ON" : "OFF"),
+              motor: motor !== "--" ? motor : (states.pump ? "ON" : "OFF"),
+            });
+          }
+      } else {
+          setActuators({ fan, motor });
+      }
+
       setIsOnline(true);
-      setLastUpdated(
-        new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-      );
+      setLastUpdated(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     } catch (err) {
-      setError("Failed to fetch data");
+      setError("Failed to fetch AWS data");
       setIsOnline(false);
       console.error(err);
     } finally {
@@ -303,19 +330,16 @@ export default function Dashboard() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.amber} />
           }
         >
-          {/* ── Header ── */}
           <Text style={s.ptag}>OVERVIEW</Text>
           <Text style={s.ptitle}>Dashboard</Text>
           <Text style={s.psub}>Real-time monitoring • House #1</Text>
 
-          {/* ── Error ── */}
           {error && (
             <View style={[s.card, { borderLeftWidth: 4, borderLeftColor: C.danger }]}>
               <Text style={{ color: C.danger, fontSize: 12 }}>⚠️ {error}</Text>
             </View>
           )}
 
-          {/* ── System Status ── */}
           <View style={s.card}>
             <View style={s.statusRow}>
               <View>
@@ -331,13 +355,11 @@ export default function Dashboard() {
             </View>
           </View>
 
-          {/* ── Sensor Cards ── */}
           <Text style={s.sectionLabel}>SENSORS</Text>
           {Object.entries(sensors).map(([key, data]) => (
             <SensorCard key={key} data={data} />
           ))}
 
-          {/* ── Actuator Cards ── */}
           <Text style={s.sectionLabel}>ACTUATORS</Text>
           <ActuatorCard label="Fan"         status={actuators.fan}   icon="aperture-outline" />
           <ActuatorCard label="Water Motor" status={actuators.motor} icon="water-outline"    />
@@ -349,8 +371,6 @@ export default function Dashboard() {
     </SafeAreaView>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   root:          { flex: 1, backgroundColor: C.bg },
@@ -380,9 +400,12 @@ const s = StyleSheet.create({
   badge:     { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   badgeText: { fontSize: 10, fontWeight: "600" },
 
-  bnav: { flexDirection: "row", backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.border2, paddingTop: 8, paddingBottom: 12 },
-  ni:   { flex: 1, alignItems: "center", gap: 2 },
-  nl:   { fontSize: 8, color: C.muted, letterSpacing: 0.3 },
-  ncw:  { flex: 1, alignItems: "center", justifyContent: "center", marginTop: -16 },
-  ncb:  { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: C.bg },
+  bnav:  { flexDirection: "row", backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.border2, paddingTop: 8, paddingBottom: 12 },
+  ni:    { flex: 1, alignItems: "center", gap: 2 },
+  nl:    { fontSize: 8, color: C.muted, letterSpacing: 0.3 },
+  ncw:   { flex: 1, alignItems: "center", justifyContent: "center", marginTop: -16 },
+  ncb:   { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: C.bg },
+
+  badge2:     { position: "absolute", top: -4, right: -6, backgroundColor: C.danger, borderRadius: 8, minWidth: 14, height: 14, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
+  badge2Text: { fontSize: 8, color: "#fff", fontWeight: "700" },
 });

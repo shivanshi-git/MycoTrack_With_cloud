@@ -2024,9 +2024,10 @@ export default function CameraAI() {
   const cameraRef = useRef(null);
 
   const [permission, requestPermission] = useCameraPermissions();
-  const [scanning,   setScanning]       = useState(false);
-  const [scans,      setScans]          = useState(INITIAL_SCANS);
-  const [result,     setResult]         = useState({
+  const [scanning,     setScanning]       = useState(false);
+  const [scans,        setScans]          = useState(INITIAL_SCANS);
+  const [captureMode,  setCaptureMode]    = useState("mobile"); // "mobile" | "esp32"
+  const [result,       setResult]         = useState({
     healthy: true, conf: 94.2, timestamp: "14:32", processTime: "1.8s",
   });
 
@@ -2181,6 +2182,71 @@ export default function CameraAI() {
     }, 500);
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // doESP32Scan — Triggers the ESP32 via AWS IoT, which takes the photo and
+  // uploads directly to EC2. We just wait for the EC2 response!
+  // ─────────────────────────────────────────────────────────────────────────────
+  const doESP32Scan = async () => {
+    if (scanning) return;
+    setScanning(true);
+    const t0 = Date.now();
+
+    let healthy    = true;
+    let confidence = 0;
+    let fromServer = false;
+
+    try {
+      // 1. POST to /trigger-iot (Wait for up to 15s)
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 20000); // 20s timeout total
+
+      const res = await fetch(`${BACKEND_URL}/trigger-iot`, {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(tid);
+
+      if (!res.ok) throw new Error(`EC2 returned ${res.status}`);
+
+      const json = await res.json();
+      healthy    = json.healthy;
+      confidence = json.confidence;
+      fromServer = true;
+
+    } catch (err) {
+      console.warn("ESP32 IoT Trigger error:", err.message);
+
+      // Fallback Demo result
+      healthy    = Math.random() > 0.4;
+      confidence = parseFloat((healthy ? 88 + Math.random() * 10 : 72 + Math.random() * 16).toFixed(1));
+
+      setTimeout(() => {
+        Alert.alert("⚠ ESP32 Offline", "The ESP32 did not capture the image in time, or EC2 is offline.\n\nShowing a demo result.");
+      }, 500);
+    }
+
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1) + "s";
+    const time    = nowTime();
+
+    setResult({ healthy, conf: confidence, timestamp: time, processTime: elapsed });
+    setScans(prev => [{ time, conf: confidence, healthy }, ...prev].slice(0, 5));
+    showResultAnim();
+    setScanning(false);
+
+    setTimeout(() => {
+      router.push({
+        pathname: "/screens/DiseaseResult",
+        params: {
+          healthy:     String(healthy),
+          conf:        String(confidence),
+          timestamp:   time,
+          processTime: elapsed,
+          fromServer:  String(fromServer),
+        },
+      });
+    }, 500);
+  };
+
   const scanLineY   = scanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 180] });
   const statusColor = result.healthy ? C.healthy : C.infected;
   const statusLabel = result.healthy ? "Healthy" : "Infected";
@@ -2210,60 +2276,138 @@ export default function CameraAI() {
 
         <Text style={s.ptag}>DISEASE DETECTION</Text>
         <Text style={s.ptitle}><Text style={{ fontStyle: "italic" }}>AI</Text> Camera Module</Text>
-        <Text style={s.psub}>Point at mushroom and tap Capture to scan</Text>
+        <Text style={s.psub}>Select capture mode and tap Scan to analyse</Text>
 
-        {/* CAMERA CARD */}
+        {/* ── MODE SELECTOR ─────────────────────────────────────────────── */}
+        <View style={s.modeSelector}>
+          <TouchableOpacity
+            style={[s.modeOption, captureMode === "mobile" && s.modeOptionActive]}
+            onPress={() => setCaptureMode("mobile")}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="phone-portrait-outline"
+              size={18}
+              color={captureMode === "mobile" ? "#fff" : C.cream3}
+            />
+            <Text style={[s.modeText, captureMode === "mobile" && s.modeTextActive]}>
+              Mobile Camera
+            </Text>
+            <Text style={[s.modeSub, captureMode === "mobile" && s.modeSubActive]}>
+              Use phone to capture
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[s.modeOption, captureMode === "esp32" && s.modeOptionActiveBlue]}
+            onPress={() => setCaptureMode("esp32")}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="hardware-chip-outline"
+              size={18}
+              color={captureMode === "esp32" ? "#fff" : C.cream3}
+            />
+            <Text style={[s.modeText, captureMode === "esp32" && s.modeTextActive]}>
+              ESP32-CAM IoT
+            </Text>
+            <Text style={[s.modeSub, captureMode === "esp32" && s.modeSubActive]}>
+              Remote IoT capture
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── CAMERA CARD ───────────────────────────────────────────────── */}
         <Animated.View style={[s.camCard, { transform: [{ scale: pulseAnim }] }]}>
-          <View style={s.cameraContainer}>
-            <CameraView ref={cameraRef} style={s.camera} facing="back" />
+          {captureMode === "mobile" ? (
+            <View style={s.cameraContainer}>
+              <CameraView ref={cameraRef} style={s.camera} facing="back" />
 
-            <View style={[s.corner, s.tl]} pointerEvents="none" />
-            <View style={[s.corner, s.tr]} pointerEvents="none" />
-            <View style={[s.corner, s.bl]} pointerEvents="none" />
-            <View style={[s.corner, s.br]} pointerEvents="none" />
+              <View style={[s.corner, s.tl]} pointerEvents="none" />
+              <View style={[s.corner, s.tr]} pointerEvents="none" />
+              <View style={[s.corner, s.bl]} pointerEvents="none" />
+              <View style={[s.corner, s.br]} pointerEvents="none" />
 
-            <Animated.View
-              style={[s.scanLine, { transform: [{ translateY: scanLineY }] }]}
-              pointerEvents="none"
-            />
+              <Animated.View
+                style={[s.scanLine, { transform: [{ translateY: scanLineY }] }]}
+                pointerEvents="none"
+              />
 
-            {scanning && (
-              <View style={s.scanOverlay} pointerEvents="none">
-                <View style={s.scanBadge}>
-                  <Ionicons name="scan-outline" size={14} color={C.amber2} />
-                  <Text style={s.scanBadgeText}>Analysing…</Text>
+              {scanning && (
+                <View style={s.scanOverlay} pointerEvents="none">
+                  <View style={s.scanBadge}>
+                    <Ionicons name="scan-outline" size={14} color={C.amber2} />
+                    <Text style={s.scanBadgeText}>Analysing…</Text>
+                  </View>
                 </View>
-              </View>
-            )}
+              )}
 
-            <Animated.View
-              pointerEvents="none"
-              style={[s.resultFlash, {
-                opacity: fadeAnim,
-                backgroundColor: result.healthy ? "rgba(22,163,74,0.10)" : "rgba(220,38,38,0.10)",
-              }]}
-            />
-          </View>
+              <Animated.View
+                pointerEvents="none"
+                style={[s.resultFlash, {
+                  opacity: fadeAnim,
+                  backgroundColor: result.healthy ? "rgba(22,163,74,0.10)" : "rgba(220,38,38,0.10)",
+                }]}
+              />
+            </View>
+          ) : (
+            /* ESP32 mode — show placeholder instead of live camera */
+            <View style={[s.cameraContainer, s.esp32Placeholder]}>
+              <Ionicons name="hardware-chip" size={48} color={"#0284c7"} />
+              <Text style={s.esp32PlaceholderTitle}>ESP32-CAM Ready</Text>
+              <Text style={s.esp32PlaceholderSub}>Tap Scan to trigger remote capture via AWS IoT</Text>
+              {scanning && (
+                <View style={s.scanOverlay} pointerEvents="none">
+                  <View style={[s.scanBadge, { borderColor: "#0284c755" }]}>
+                    <Ionicons name="pulse-outline" size={14} color={"#0284c7"} />
+                    <Text style={[s.scanBadgeText, { color: "#0284c7" }]}>Waiting for ESP32…</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
 
           <View style={s.camFooter}>
             <View>
-              <Text style={s.camLbl}>Camera <Text style={s.camLblBold}>#1 — Live Feed</Text></Text>
-              <Text style={s.camSub}>Tap to capture & analyse</Text>
+              <Text style={s.camLbl}>
+                {captureMode === "mobile"
+                  ? <Text>Camera <Text style={s.camLblBold}>#1 — Live Feed</Text></Text>
+                  : <Text>ESP32 <Text style={[s.camLblBold, { color: "#0284c7" }]}>IoT — Remote</Text></Text>
+                }
+              </Text>
+              <Text style={s.camSub}>
+                {captureMode === "mobile" ? "Captures from phone camera" : "Triggers ESP32-CAM via AWS IoT"}
+              </Text>
             </View>
-            <TouchableOpacity onPress={doScan} disabled={scanning}>
+            <TouchableOpacity
+              onPress={captureMode === "mobile" ? doScan : doESP32Scan}
+              disabled={scanning}
+            >
               <LinearGradient
-                colors={scanning ? ["#d1d5db", "#9ca3af"] : [C.brown, C.amber]}
+                colors={
+                  scanning
+                    ? ["#d1d5db", "#9ca3af"]
+                    : captureMode === "mobile"
+                      ? [C.brown, C.amber]
+                      : ["#0369a1", "#0284c7"]
+                }
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                 style={s.capBtn}
               >
                 <Ionicons
-                  name={scanning ? "hourglass-outline" : "camera"}
-                  size={13}
+                  name={
+                    scanning
+                      ? "hourglass-outline"
+                      : captureMode === "mobile"
+                        ? "camera"
+                        : "hardware-chip-outline"
+                  }
+                  size={14}
                   color={scanning ? "#6b7280" : "#fff"}
-                  style={{ marginRight: 5 }}
+                  style={{ marginRight: 6 }}
                 />
                 <Text style={[s.capBtnText, scanning && { color: "#6b7280" }]}>
-                  {scanning ? "Scanning…" : "Capture & Analyse"}
+                  {scanning ? "Scanning…" : "Scan Now"}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -2364,8 +2508,23 @@ const s = StyleSheet.create({
   camLbl:          { fontSize: 10, color: C.muted },
   camLblBold:      { color: C.amber2, fontWeight: "500" },
   camSub:          { fontSize: 9, color: C.muted, opacity: 0.6, marginTop: 1 },
-  capBtn:          { flexDirection: "row", alignItems: "center", borderRadius: 9, paddingHorizontal: 13, paddingVertical: 9 },
-  capBtnText:      { color: "#fff", fontSize: 11, fontWeight: "600" },
+  capBtn:          { flexDirection: "row", alignItems: "center", borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
+  capBtnText:      { color: "#fff", fontSize: 12, fontWeight: "600" },
+
+  // ── Mode Selector ──
+  modeSelector:    { flexDirection: "row", gap: 10, marginBottom: 12 },
+  modeOption:      { flex: 1, backgroundColor: C.card, borderWidth: 1.5, borderColor: C.border2, borderRadius: 12, padding: 12, alignItems: "center", gap: 4 },
+  modeOptionActive:     { backgroundColor: C.amber, borderColor: C.amber },
+  modeOptionActiveBlue: { backgroundColor: "#0369a1", borderColor: "#0369a1" },
+  modeText:        { fontSize: 12, fontWeight: "600", color: C.cream2 },
+  modeTextActive:  { color: "#fff" },
+  modeSub:         { fontSize: 9, color: C.muted },
+  modeSubActive:   { color: "rgba(255,255,255,0.75)" },
+
+  // ── ESP32 Placeholder ──
+  esp32Placeholder:      { backgroundColor: "#f0f9ff", alignItems: "center", justifyContent: "center", gap: 8 },
+  esp32PlaceholderTitle:  { fontSize: 16, fontWeight: "700", color: "#0369a1" },
+  esp32PlaceholderSub:    { fontSize: 11, color: "#6b7280", textAlign: "center", paddingHorizontal: 32 },
 
   slbl:            { fontSize: 9, letterSpacing: 2, color: C.muted, fontWeight: "500", marginVertical: 8, textTransform: "uppercase" },
   resCard:         { backgroundColor: C.card, borderWidth: 1, borderColor: C.border2, borderRadius: 12, padding: 12, marginBottom: 10 },
