@@ -1,10 +1,10 @@
 /**
  * Dashboard.js
  * Mushroom Farm Dashboard — styled to match MycoTrack dark amber theme
- * Integrated with AWS IoT Core & DynamoDB for live monitoring
+ * Integrated with AWS IoT Core, API Gateway & DynamoDB
  */
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -19,11 +19,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 
-// ✅ Correct import paths
+// ✅ Integrated Imports
 import { getAlerts, getActuatorStates } from "../../src/AWS/dbService";
 
-// ─── Theme ────────────────────────────────────────────────────────────────────
+// ─── AWS API ──────────────────────────────────────────────────────────────────
+const API_URL = "https://lvcnlqo6wa.execute-api.ap-south-1.amazonaws.com/prod/sensordata";
 
+// ─── Theme ────────────────────────────────────────────────────────────────────
 const C = {
   bg:      "#f9fafb",
   card:    "#ffffff",
@@ -41,35 +43,18 @@ const C = {
   danger:  "#dc2626",
 };
 
-// ─── Dummy Data / Fallbacks ──────────────────────────────────────────────────
-
-const DUMMY_DATA = {
-  status: "online",
-  lastUpdated: "Just now",
-  sensors: {
-    temperature:  { value: 23,  unit: "°C",   status: "normal",  icon: "thermometer-outline", label: "Temperature",   history: [21,21.5,22,22.5,23,22.8,23.1,23,22.5,23,23.2,23] },
-    humidity:     { value: 85,  unit: "%",    status: "normal",  icon: "water-outline",       label: "Humidity",      history: [80,82,83,85,86,85,84,85,87,85,84,85] },
-    soilMoisture: { value: 72,  unit: "%",    status: "normal",  icon: "leaf-outline",        label: "Soil Moisture", history: [70,71,72,73,72,71,72,73,72,71,72,72] },
-    co2:          { value: 650, unit: " ppm", status: "warning", icon: "cloud-outline",       label: "CO₂ Level",     history: [600,620,630,640,650,645,650,655,650,648,650,670] },
-  },
-};
-
+// ─── Sensor Ranges ────────────────────────────────────────────────────────────
 const SENSOR_RANGES = {
-  temperature:  { min: 18,  max: 28  },
-  humidity:     { min: 75,  max: 95  },
-  soilMoisture: { min: 60,  max: 85  },
-  co2:          { min: 500, max: 900 },
+  temperature: { min: 18, max: 28 },
+  humidity:    { min: 75, max: 95 },
+  soil:        { min: 60, max: 85 },
+  co2:         { min: 500, max: 900 },
 };
-
-function nudge(current, step, min, max) {
-  const delta = (Math.random() * 2 - 1) * step;
-  return Math.round(Math.min(max, Math.max(min, current + delta)) * 10) / 10;
-}
-
-const NUDGE_STEPS = { temperature: 0.3, humidity: 1, soilMoisture: 1, co2: 8 };
 
 function deriveStatus(key, value) {
-  const { min, max } = SENSOR_RANGES[key];
+  const range = SENSOR_RANGES[key];
+  if (!range) return "normal";
+  const { min, max } = range;
   const span = max - min;
   if (value < min + span * 0.1 || value > max - span * 0.1) return "danger";
   if (value < min + span * 0.2 || value > max - span * 0.2) return "warning";
@@ -80,8 +65,11 @@ function deriveStatus(key, value) {
 
 function Sparkline({ data = [], color = C.amber }) {
   if (!data || data.length < 2) return null;
-  const min   = Math.min(...data);
-  const max   = Math.max(...data);
+  const filteredData = data.filter(v => v !== null && v !== undefined);
+  if (filteredData.length < 2) return null;
+  
+  const min   = Math.min(...filteredData);
+  const max   = Math.max(...filteredData);
   const range = max - min || 1;
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-end", height: 32, gap: 2 }}>
@@ -90,8 +78,8 @@ function Sparkline({ data = [], color = C.amber }) {
           key={i}
           style={{
             flex: 1,
-            height: Math.max(4, ((v - min) / range) * 32),
-            backgroundColor: color,
+            height: v === null ? 2 : Math.max(4, ((v - min) / range) * 32),
+            backgroundColor: v === null ? C.border : color,
             borderRadius: 2,
             opacity: 0.4 + (i / data.length) * 0.6,
           }}
@@ -118,7 +106,6 @@ function StatusBadge({ status }) {
 function SensorCard({ data }) {
   const { value, unit, status, icon, label, history } = data;
   const sparkColor = status === "warning" ? C.warning : status === "danger" ? C.danger : C.amber;
-
   return (
     <View style={[s.card, status === "danger" && { borderColor: C.danger + "66" }]}>
       <View style={s.sensorHeader}>
@@ -169,7 +156,6 @@ function ActuatorCard({ label, status, icon }) {
 export function BottomNav({ active, router }) {
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Poll for unread alerts count
   useEffect(() => {
     const fetchUnread = async () => {
       try {
@@ -191,7 +177,6 @@ export function BottomNav({ active, router }) {
     { key: "alerts",     icon: "alert-circle-outline", label: "Alerts",     route: "/screens/Alerts"     },
     { key: "settings",   icon: "settings-outline",     label: "Settings",   route: "/screens/Settings"   },
   ];
-
   return (
     <View style={s.bnav}>
       {items.map((item) => {
@@ -200,7 +185,7 @@ export function BottomNav({ active, router }) {
             <View key="camera" style={s.ncw}>
               <TouchableOpacity onPress={() => router.push(item.route)}>
                 <LinearGradient
-                  colors={[C.brown, C.amber]}
+                   colors={[C.brown, C.amber]}
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                   style={[s.ncb, active === "camera" && { borderColor: C.amber2 }]}
                 >
@@ -210,7 +195,6 @@ export function BottomNav({ active, router }) {
             </View>
           );
         }
-
         const isAlerts  = item.key === "alerts";
         const showBadge = isAlerts && unreadCount > 0;
 
@@ -237,49 +221,81 @@ export function BottomNav({ active, router }) {
 export default function Dashboard() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState(null);
+  const [lastUpdated, setLastUpdated] = useState("--");
+  const [isOnline, setIsOnline]     = useState(false);
 
-  const [sensors, setSensors] = useState(DUMMY_DATA.sensors);
-  const [actuators, setActuators] = useState({ fan: false, motor: false });
-  const [lastUpdated, setLastUpdated] = useState("Just now");
-  const [isOnline, setIsOnline] = useState(true);
+  const [sensors, setSensors] = useState({
+    temperature: { value: null, unit: "°C",   status: "normal", icon: "thermometer-outline", label: "Temperature",   history: [] },
+    humidity:    { value: null, unit: "%",    status: "normal", icon: "water-outline",       label: "Humidity",      history: [] },
+    soil:        { value: null, unit: "%",    status: "normal", icon: "leaf-outline",        label: "Soil Moisture", history: [] },
+    co2:         { value: null, unit: " ppm", status: "normal", icon: "cloud-outline",       label: "CO₂ Level",     history: [] },
+  });
+
+  const [actuators, setActuators] = useState({ fan: "--", motor: "--" });
 
   const fetchData = async () => {
     try {
-      // 1. Fetch actuator states
-      const states = await getActuatorStates("house_1");
-      if (states) {
-        setActuators({
-          fan: states.fan || false,
-          motor: states.pump || false,
-        });
+      setError(null);
+      // 1. Fetch from Tanvi's API
+      const response = await fetch(API_URL);
+      const json = await response.json();
+      const data = typeof json.body === "string" ? JSON.parse(json.body) : json.body;
+
+      const temp  = parseFloat(data?.temperature ?? null);
+      const hum   = parseFloat(data?.humidity    ?? null);
+      const soil  = parseFloat(data?.soil        ?? null);
+      const co2   = parseFloat(data?.co2         ?? null);
+      const fan   = data?.fan   || "--";
+      const motor = data?.motor || "--";
+
+      setSensors((prev) => ({
+        temperature: {
+          ...prev.temperature,
+          value:   isNaN(temp) ? null : Math.round(temp * 10) / 10,
+          status:  deriveStatus("temperature", temp),
+          history: [...prev.temperature.history.slice(-11), temp],
+        },
+        humidity: {
+          ...prev.humidity,
+          value:   isNaN(hum) ? null : Math.round(hum * 10) / 10,
+          status:  deriveStatus("humidity", hum),
+          history: [...prev.humidity.history.slice(-11), hum],
+        },
+        soil: {
+          ...prev.soil,
+          value:   isNaN(soil) ? null : Math.round(soil),
+          status:  deriveStatus("soil", soil),
+          history: [...prev.soil.history.slice(-11), soil],
+        },
+        co2: {
+          ...prev.co2,
+          value:   isNaN(co2) ? null : Math.round(co2),
+          status:  deriveStatus("co2", co2),
+          history: [...prev.co2.history.slice(-11), co2],
+        },
+      }));
+
+      // 2. Fetch actuators from dbService if API doesn't have them
+      if (fan === "--" || motor === "--") {
+          const states = await getActuatorStates("house_1");
+          if (states) {
+            setActuators({
+              fan: fan !== "--" ? fan : (states.fan ? "ON" : "OFF"),
+              motor: motor !== "--" ? motor : (states.pump ? "ON" : "OFF"),
+            });
+          }
+      } else {
+          setActuators({ fan, motor });
       }
 
-      // 2. Derive sensor nudges (Simulating live drift since live stream isn't always active)
-      setSensors((prev) => {
-        const next = {};
-        Object.entries(prev).forEach(([key, sensor]) => {
-          const { min, max } = SENSOR_RANGES[key];
-          const step = NUDGE_STEPS[key];
-          const newValue = nudge(sensor.value, step, min, max);
-          const newHistory = [...sensor.history.slice(1), newValue];
-          next[key] = {
-            ...sensor,
-            value: newValue,
-            status: deriveStatus(key, newValue),
-            history: newHistory,
-          };
-        });
-        return next;
-      });
-
-      setLastUpdated(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
       setIsOnline(true);
-      setError(null);
+      setLastUpdated(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     } catch (err) {
-      console.warn("Dashboard fetchData failed:", err);
+      setError("Failed to fetch AWS data");
       setIsOnline(false);
+      console.error(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -301,6 +317,7 @@ export default function Dashboard() {
     return (
       <SafeAreaView style={[s.root, { justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator size="large" color={C.amber} />
+        <Text style={[s.timeLabel, { marginTop: 12 }]}>Connecting to AWS IoT...</Text>
       </SafeAreaView>
     );
   }
@@ -357,8 +374,6 @@ export default function Dashboard() {
     </SafeAreaView>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   root:          { flex: 1, backgroundColor: C.bg },
