@@ -2181,6 +2181,71 @@ export default function CameraAI() {
     }, 500);
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // doESP32Scan — Triggers the ESP32 via AWS IoT, which takes the photo and
+  // uploads directly to EC2. We just wait for the EC2 response!
+  // ─────────────────────────────────────────────────────────────────────────────
+  const doESP32Scan = async () => {
+    if (scanning) return;
+    setScanning(true);
+    const t0 = Date.now();
+
+    let healthy    = true;
+    let confidence = 0;
+    let fromServer = false;
+
+    try {
+      // 1. POST to /trigger-iot (Wait for up to 15s)
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 20000); // 20s timeout total
+
+      const res = await fetch(`${BACKEND_URL}/trigger-iot`, {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(tid);
+
+      if (!res.ok) throw new Error(`EC2 returned ${res.status}`);
+
+      const json = await res.json();
+      healthy    = json.healthy;
+      confidence = json.confidence;
+      fromServer = true;
+
+    } catch (err) {
+      console.warn("ESP32 IoT Trigger error:", err.message);
+
+      // Fallback Demo result
+      healthy    = Math.random() > 0.4;
+      confidence = parseFloat((healthy ? 88 + Math.random() * 10 : 72 + Math.random() * 16).toFixed(1));
+
+      setTimeout(() => {
+        Alert.alert("⚠ ESP32 Offline", "The ESP32 did not capture the image in time, or EC2 is offline.\n\nShowing a demo result.");
+      }, 500);
+    }
+
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1) + "s";
+    const time    = nowTime();
+
+    setResult({ healthy, conf: confidence, timestamp: time, processTime: elapsed });
+    setScans(prev => [{ time, conf: confidence, healthy }, ...prev].slice(0, 5));
+    showResultAnim();
+    setScanning(false);
+
+    setTimeout(() => {
+      router.push({
+        pathname: "/screens/DiseaseResult",
+        params: {
+          healthy:     String(healthy),
+          conf:        String(confidence),
+          timestamp:   time,
+          processTime: elapsed,
+          fromServer:  String(fromServer),
+        },
+      });
+    }, 500);
+  };
+
   const scanLineY   = scanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 180] });
   const statusColor = result.healthy ? C.healthy : C.infected;
   const statusLabel = result.healthy ? "Healthy" : "Infected";
@@ -2250,23 +2315,38 @@ export default function CameraAI() {
               <Text style={s.camLbl}>Camera <Text style={s.camLblBold}>#1 — Live Feed</Text></Text>
               <Text style={s.camSub}>Tap to capture & analyse</Text>
             </View>
-            <TouchableOpacity onPress={doScan} disabled={scanning}>
-              <LinearGradient
-                colors={scanning ? ["#d1d5db", "#9ca3af"] : [C.brown, C.amber]}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={s.capBtn}
-              >
-                <Ionicons
-                  name={scanning ? "hourglass-outline" : "camera"}
-                  size={13}
-                  color={scanning ? "#6b7280" : "#fff"}
-                  style={{ marginRight: 5 }}
-                />
-                <Text style={[s.capBtnText, scanning && { color: "#6b7280" }]}>
-                  {scanning ? "Scanning…" : "Capture & Analyse"}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity onPress={doESP32Scan} disabled={scanning}>
+                <LinearGradient
+                  colors={scanning ? ["#d1d5db", "#9ca3af"] : ["#0369a1", "#0284c7"]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={s.capBtn}
+                >
+                  <Ionicons name={scanning ? "hardware-chip" : "hardware-chip-outline"} size={13} color={scanning ? "#6b7280" : "#fff"} style={{ marginRight: 5 }} />
+                  <Text style={[s.capBtnText, scanning && { color: "#6b7280" }]}>
+                    {scanning ? "Waiting for ESP32…" : "Trigger ESP32 IoT"}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={doScan} disabled={scanning}>
+                <LinearGradient
+                  colors={scanning ? ["#d1d5db", "#9ca3af"] : [C.brown, C.amber]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={s.capBtn}
+                >
+                  <Ionicons
+                    name={scanning ? "hourglass-outline" : "camera"}
+                    size={13}
+                    color={scanning ? "#6b7280" : "#fff"}
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={[s.capBtnText, scanning && { color: "#6b7280" }]}>
+                    Capture Local
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
           </View>
         </Animated.View>
 
