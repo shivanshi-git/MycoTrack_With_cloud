@@ -2,7 +2,9 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
+#include <WebServer.h>
 #include <HTTPClient.h>
+
 
 // Forward declaration for MQTT callback
 void messageHandler(char* topic, byte* payload, unsigned int length);
@@ -116,6 +118,64 @@ kS9Xdq83Jn/j+aYRNMho3a88i6iSvDMYHr5xKuCfoLDc65rutd8K1g==
 
 WiFiClientSecure secureClient;
 PubSubClient mqttClient(secureClient);
+WebServer server(80);
+
+void handleCapture() {
+  Serial.println("Web request: Capturing photo...");
+  camera_fb_t * fb = esp_camera_fb_get();
+  if(!fb) {
+    server.send(500, "text/plain", "Camera capture failed");
+    return;
+  }
+  
+  server.setContentLength(fb->len);
+  server.send(200, "image/jpeg", "");
+  server.sendContent((char *)fb->buf, fb->len);
+  
+  esp_camera_fb_return(fb);
+}
+
+void handleRoot() {
+  String html = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><style>";
+  html += "body { font-family: sans-serif; text-align: center; background: #121212; color: white; padding: 20px; }";
+  html += ".btn { display: inline-block; padding: 15px 30px; margin: 10px; background: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }";
+  html += ".btn-blue { background: #2196F3; }";
+  html += "h1 { color: #4CAF50; }";
+  html += "</style></head><body>";
+  html += "<h1>🍄 MycoTrack AI Cam</h1>";
+  html += "<p><b>Status:</b> " + String(mqttClient.connected() ? "✅ Cloud Connected" : "❌ Disconnected") + "</p>";
+  html += "<p><b>IP Address:</b> " + WiFi.localIP().toString() + "</p>";
+  
+  html += "<a href='/capture' class='btn' target='_blank'>📷 VIEW IMAGE</a><br>";
+  html += "<a href='/ai-scan' class='btn btn-blue'>🧠 SCAN WITH AI</a>";
+  
+  html += "<p style='margin-top:40px; font-size: 0.8em; color: #888;'>Topic: mycotrack/esp32_cam_001/trigger</p>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+void handleAIScan() {
+  server.sendHeader("Connection", "close");
+  
+  camera_fb_t * fb = esp_camera_fb_get();
+  if(!fb) {
+    server.send(500, "text/plain", "Camera capture failed");
+    return;
+  }
+  
+  String result = uploadImageToEC2(fb);
+  esp_camera_fb_return(fb);
+  
+  String html = "<html><body style='font-family:sans-serif; text-align:center; background:#121212; color:white; padding:50px;'>";
+  html += "<h1>🧠 AI Classification Result</h1>";
+  html += "<div style='background:#222; padding:30px; border-radius:10px; border: 1px solid #4CAF50; display:inline-block; text-align:left;'>";
+  html += "<pre style='color:#4CAF50; font-size:1.2em;'>" + result + "</pre>";
+  html += "</div><br><br>";
+  html += "<a href='/' style='color:#4CAF50; text-decoration:none;'>← Back to Home</a>";
+  html += "</body></html>";
+  
+  server.send(200, "text/html", html);
+}
 
 void connectToWiFi() {
   Serial.print("Connecting to Wi-Fi");
@@ -125,6 +185,8 @@ void connectToWiFi() {
     Serial.print(".");
   }
   Serial.println("\nConnected to Wi-Fi");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
 }
 
 void connectToAWS() {
@@ -167,24 +229,40 @@ void initCamera() {
   config.pin_reset    = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
+  config.grab_mode    = CAMERA_GRAB_LATEST;
   
   if(psramFound()){
-    config.frame_size = FRAMESIZE_UXGA; // 1600x1200
+    Serial.println("PSRAM found — using VGA with high quality");
+    config.frame_size   = FRAMESIZE_VGA;  // 640x480 — reliable
     config.jpeg_quality = 10;
-    config.fb_count = 2;
+    config.fb_count     = 2;
+    config.fb_location  = CAMERA_FB_IN_PSRAM;
   } else {
-    config.frame_size = FRAMESIZE_SVGA;
+    Serial.println("WARNING: No PSRAM! Enable PSRAM in Arduino IDE: Tools > PSRAM > Enabled");
+    config.frame_size   = FRAMESIZE_VGA;
     config.jpeg_quality = 12;
-    config.fb_count = 1;
+    config.fb_count     = 1;
+    config.fb_location  = CAMERA_FB_IN_DRAM;
   }
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Camera init failed: 0x%x\n", err);
+    Serial.printf("Camera init FAILED: 0x%x\n", err);
+    Serial.println("Check: PSRAM enabled? Camera ribbon cable seated properly?");
+    return;
+  }
+  Serial.println("Camera init OK");
+
+  // Warm-up: discard first frame (often garbage)
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (fb) {
+    Serial.printf("Warm-up frame: %u bytes\n", fb->len);
+    esp_camera_fb_return(fb);
   }
 }
 
-void uploadImageToEC2(camera_fb_t *fb) {
+String uploadImageToEC2(camera_fb_t *fb) {
+  String response = "No response";
   HTTPClient http;
   WiFiClient client;
 
@@ -215,25 +293,38 @@ void uploadImageToEC2(camera_fb_t *fb) {
   Serial.printf("EC2 Upload Response Code: %d\n", httpResponseCode);
 
   if (httpResponseCode > 0) {
-    String response = http.getString();
+    response = http.getString();
     Serial.println("Response: " + response);
   } else {
-    Serial.printf("Upload error: %s\n", http.errorToString(httpResponseCode).c_str());
+    response = "Upload error: " + http.errorToString(httpResponseCode);
+    Serial.println(response);
   }
 
   free(body);
   http.end();
+  return response;
 }
 
 void messageHandler(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived on topic: ");
   Serial.println(topic);
   
-  // We don't really care about payload contents for a simple trigger, just the event
   Serial.println("Capturing photo...");
-  camera_fb_t * fb = esp_camera_fb_get();
-  if(!fb) {
-    Serial.println("Camera capture failed");
+  
+  // Retry up to 3 times with a short delay
+  camera_fb_t * fb = NULL;
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    fb = esp_camera_fb_get();
+    if (fb) {
+      Serial.printf("Capture OK on attempt %d — %u bytes\n", attempt, fb->len);
+      break;
+    }
+    Serial.printf("Capture failed (attempt %d/3), retrying...\n", attempt);
+    delay(500);
+  }
+  
+  if (!fb) {
+    Serial.println("Camera capture FAILED after 3 attempts");
     return;
   }
   
@@ -246,6 +337,12 @@ void setup() {
   initCamera();
   connectToWiFi();
   connectToAWS();
+
+  server.on("/", handleRoot);
+  server.on("/capture", handleCapture);
+  server.on("/ai-scan", handleAIScan);
+  server.begin();
+  Serial.println("Web Server started!");
 }
 
 void loop() {
@@ -253,5 +350,6 @@ void loop() {
     connectToAWS();
   }
   mqttClient.loop();
+  server.handleClient();
   delay(10);
 }
