@@ -164,30 +164,24 @@ export default function Monitoring() {
   };
 
   // ─── FAN CONTROL ──────────────────────────────────────────────────────────
-  const toggleFan = async (val) => {
-    if (master) return;
-
-    pendingRef.current = true;
-    setFan(val);
-    await saveLocal("actuator_fan", val);
-
-    await sendCommand("Tanvi/esp32/control", val ? "FAN_ON" : "FAN_OFF");
-
-    setTimeout(() => { pendingRef.current = false; }, 5000);
-  };
+const toggleFan = async (val) => {
+  if (master) return;
+  setFan(val);
+  await sendCommand(
+    "Tanvi/esp32/fan",
+    val ? "ON" : "OFF"
+  );
+};
 
   // ─── MOTOR CONTROL ────────────────────────────────────────────────────────
-  const toggleMotor = async (val) => {
-    if (master) return;
-
-    pendingRef.current = true;
-    setMotor(val);
-    await saveLocal("actuator_motor", val);
-
-    await sendCommand("Tanvi/esp32/control", val ? "MOTOR_ON" : "MOTOR_OFF");
-
-    setTimeout(() => { pendingRef.current = false; }, 5000);
-  };
+const toggleMotor = async (val) => {
+  if (master) return;
+  setMotor(val);
+  await sendCommand(
+    "Tanvi/esp32/motor",
+    val ? "ON" : "OFF"
+  );
+};
 
   return (
     <SafeAreaView style={s.root}>
