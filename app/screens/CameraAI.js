@@ -2019,9 +2019,19 @@ const INITIAL_SCANS = [
   { time: "08:00", conf: 87.3, healthy: false },
 ];
 
+// Fallback images for Demo Mode
+const FALLBACK_1 = require("../../assets/1.png");
+const FALLBACK_2 = require("../../assets/2.png");
+const FALLBACK_3 = require("../../assets/3.png");
+const FALLBACK_4 = require("../../assets/4.png");
+const FALLBACK_5 = require("../../assets/5.png");
+const FALLBACK_6 = require("../../assets/6.png");
+const FALLBACK_7 = require("../../assets/7.png");
+
 export default function CameraAI() {
   const router    = useRouter();
   const cameraRef = useRef(null);
+  const demoIndex = useRef(0); // For rotating between 1.png to 7.png
 
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning,     setScanning]       = useState(false);
@@ -2194,6 +2204,7 @@ export default function CameraAI() {
     let healthy    = true;
     let confidence = 0;
     let fromServer = false;
+    let demoImgId  = "0";
 
     try {
       // 1. POST to /trigger-iot (Wait for up to 15s)
@@ -2214,14 +2225,24 @@ export default function CameraAI() {
       fromServer = true;
 
     } catch (err) {
-      console.warn("ESP32 IoT Trigger error:", err.message);
-
-      // Fallback Demo result
-      healthy    = Math.random() > 0.4;
-      confidence = parseFloat((healthy ? 88 + Math.random() * 10 : 72 + Math.random() * 16).toFixed(1));
+      const timedOut = err.name === "AbortError";
+      console.warn("ESP32 IoT Trigger error:", timedOut ? "Timed out" : err.message);
+      
+      // Demo Mode — rotate between 1.png and 7.png
+      demoIndex.current = (demoIndex.current % 7) + 1;
+      demoImgId  = String(demoIndex.current);
+      
+      // USER REQUEST: All demo images predict healthy only
+      healthy    = true; 
+      
+      confidence = parseFloat((92 + Math.random() * 6).toFixed(1));
+      fromServer = false;
 
       setTimeout(() => {
-        Alert.alert("⚠ ESP32 Offline", "The ESP32 did not capture the image in time, or EC2 is offline.\n\nShowing a demo result.");
+        Alert.alert(
+          "ℹ️ Demo Mode", 
+          "EC2/ESP32 is offline. Showing a pre-captured sample to demonstrate analysis."
+        );
       }, 500);
     }
 
@@ -2242,6 +2263,7 @@ export default function CameraAI() {
           timestamp:   time,
           processTime: elapsed,
           fromServer:  String(fromServer),
+          demoImg:     demoImgId,
         },
       });
     }, 500);

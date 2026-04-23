@@ -418,7 +418,7 @@
 import React, { useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Alert, ActivityIndicator,
+  TouchableOpacity, Alert, ActivityIndicator, Image
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -480,6 +480,16 @@ const FALLBACK_HEALTHY = {
   supplement1: { name: "Growth Enhancer",     description: "Supplements to boost healthy mushroom yield",     tags: ["Growth", "Preventive"] },
   supplement2: { name: "Substrate Optimizer", description: "Improves substrate nutrition and water retention", tags: ["Substrate", "Nutrition"] },
 };
+
+// Demo / Fallback local images
+const DEMO_IMG_1 = require("../../assets/1.png");
+const DEMO_IMG_2 = require("../../assets/2.png");
+const DEMO_IMG_3 = require("../../assets/3.png");
+const DEMO_IMG_4 = require("../../assets/4.png");
+const DEMO_IMG_5 = require("../../assets/5.png");
+const DEMO_IMG_6 = require("../../assets/6.png");
+const DEMO_IMG_7 = require("../../assets/7.png");
+
 
 // ── Groq API call with abort timeout ─────────────────────────────────────────
 async function fetchDiseaseAnalysis(conf, severity, isHealthy) {
@@ -644,6 +654,30 @@ export default function DiseaseResult() {
             <Text style={s.metaItem}>⚡ {processTime}</Text>
             <Text style={s.metaItem}>🤖 ResNet-50</Text>
             <Text style={s.metaItem}>{fromServer ? "🟢 EC2 Live" : "🟡 Demo"}</Text>
+          </View>
+
+          {/* Photo Display */}
+          <View style={s.imgBox}>
+            {params.demoImg === "1" ? (
+              <Image source={DEMO_IMG_1} style={s.img} resizeMode="cover" />
+            ) : params.demoImg === "2" ? (
+              <Image source={DEMO_IMG_2} style={s.img} resizeMode="cover" />
+            ) : params.demoImg === "3" ? (
+              <Image source={DEMO_IMG_3} style={s.img} resizeMode="cover" />
+            ) : params.demoImg === "4" ? (
+              <Image source={DEMO_IMG_4} style={s.img} resizeMode="cover" />
+            ) : params.demoImg === "5" ? (
+              <Image source={DEMO_IMG_5} style={s.img} resizeMode="cover" />
+            ) : params.demoImg === "6" ? (
+              <Image source={DEMO_IMG_6} style={s.img} resizeMode="cover" />
+            ) : params.demoImg === "7" ? (
+              <Image source={DEMO_IMG_7} style={s.img} resizeMode="cover" />
+            ) : (
+              <View style={s.noImg}>
+                <Ionicons name="camera" size={32} color={C.border2} />
+                <Text style={s.noImgText}>Real-time image not available</Text>
+              </View>
+            )}
           </View>
         </View>
 

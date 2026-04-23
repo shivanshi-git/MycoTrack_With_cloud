@@ -241,11 +241,21 @@ void uploadImageToEC2(camera_fb_t *fb) {
 
   uint32_t totalLen = head.length() + fb->len + tail.length();
 
-  // Allocate contiguous buffer
-  uint8_t *body = (uint8_t *)malloc(totalLen);
+  // Allocate buffer in PSRAM (External 4MB on AI-Thinker) if available, else use DRAM
+  uint8_t *body = NULL;
+  if(psramFound()){
+    body = (uint8_t *)ps_malloc(totalLen);
+    if(body) Serial.println("Using PSRAM for upload buffer");
+  }
+  
   if (!body) {
-    Serial.println("Failed to allocate upload buffer");
-    return;
+    body = (uint8_t *)malloc(totalLen);
+    if(body) Serial.println("Using DRAM for upload buffer (PSRAM not found or full)");
+  }
+
+  if (!body) {
+    Serial.println("CRITICAL: Failed to allocate upload buffer!");
+    return; 
   }
 
   // Copy head + image + tail into body
