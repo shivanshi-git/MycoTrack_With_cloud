@@ -245,7 +245,7 @@ void uploadImageToEC2(camera_fb_t *fb) {
   uint8_t *body = (uint8_t *)malloc(totalLen);
   if (!body) {
     Serial.println("Failed to allocate upload buffer");
-    return "Memory Allocation Error";
+    return;
   }
 
   // Copy head + image + tail into body
