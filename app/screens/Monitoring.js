@@ -214,7 +214,7 @@ const toggleMotor = async (val) => {
         <ActuatorCard
           icon="water-outline"
           title="Motor"
-          subtitle="12V DC Pump"
+          subtitle="5V DC Pump"
           value={motor}
           onToggle={toggleMotor}
           mode={motorMode}
