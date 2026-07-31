@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mycotrack-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - AWS_REGION=eu-north-1
+      - S3_BUCKET=mycotrack-images
+      - DYNAMO_TABLE=MycoTrack_Scans
+      - IOT_ENDPOINT=a12i78alo13mj4-ats.iot.eu-north-1.amazonaws.com
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: mycotrack-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

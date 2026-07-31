@@ -1,0 +1,10 @@
+node_modules
+.expo
+.git
+.github
+.vscode
+dist
+web-build
+backend/venv
+backend/__pycache__
+*.log

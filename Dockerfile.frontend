@@ -1,0 +1,27 @@
+# Stage 1: Build Expo Web static export
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependency configuration
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --legacy-peer-deps
+
+# Copy source files
+COPY . .
+
+# Export static web files
+RUN npx expo export --platform web
+
+# Stage 2: Serve static files via Nginx
+FROM nginx:alpine
+
+# Copy built web export from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Expose HTTP port 80
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

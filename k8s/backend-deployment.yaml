@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mycotrack-backend
+  namespace: default
+  labels:
+    app: mycotrack-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mycotrack-backend
+  template:
+    metadata:
+      labels:
+        app: mycotrack-backend
+    spec:
+      containers:
+      - name: backend
+        image: mycotrack-backend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: AWS_REGION
+          value: "eu-north-1"
+        - name: S3_BUCKET
+          value: "mycotrack-images"
+        - name: DYNAMO_TABLE
+          value: "MycoTrack_Scans"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /docs
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mycotrack-backend-service
+  namespace: default
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: mycotrack-backend
