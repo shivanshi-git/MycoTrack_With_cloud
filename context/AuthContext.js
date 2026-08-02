@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { subscribeToAuthChanges } from "../firebase/authService";
+import { getCurrentLoggedInUser } from "../src/AWS/AuthService";
 
 const AuthContext = createContext(null);
 
@@ -8,13 +8,10 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Subscribe to Firebase auth state and clean up on unmount
-    const unsubscribe = subscribeToAuthChanges((firebaseUser) => {
-      setUser(firebaseUser);
-      setLoading(false);
-    });
-
-    return unsubscribe;
+    getCurrentLoggedInUser()
+      .then((u) => setUser(u))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
