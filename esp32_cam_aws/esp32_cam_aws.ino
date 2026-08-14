@@ -26,6 +26,7 @@ void messageHandler(char* topic, byte* payload, unsigned int length);
 #define VSYNC_GPIO_NUM    25
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
+#define FLASH_GPIO_NUM     4
 
 // ─── CONFIGURATION ──────────────────────────────────────────────────────────
 const char* WIFI_SSID     = "Hm";
@@ -199,8 +200,8 @@ void initCamera() {
   config.grab_mode    = CAMERA_GRAB_LATEST;
   
   if(psramFound()){
-    Serial.println("PSRAM found — using VGA with high quality");
-    config.frame_size   = FRAMESIZE_VGA;  // 640x480 — reliable
+    Serial.println("PSRAM found — using SVGA (800x600) with high quality");
+    config.frame_size   = FRAMESIZE_SVGA;  // 800x600 — high quality with PSRAM
     config.jpeg_quality = 10;
     config.fb_count     = 2;
     config.fb_location  = CAMERA_FB_IN_PSRAM;
@@ -279,16 +280,32 @@ void uploadImageToEC2(camera_fb_t *fb) {
   http.end();
 }
 
+// ─── FLASH & WARM-UP CAPTURE HELPER ───────────────────────────────────────────
+camera_fb_t* capturePhotoWithFlash() {
+  digitalWrite(FLASH_GPIO_NUM, HIGH); // Turn Flash ON
+  delay(150); // Give LED and camera sensor time to illuminate
+
+  // Discard 2 warm-up frames for AWB/AEC sensor adjustment
+  for (int i = 0; i < 2; i++) {
+    camera_fb_t *dummy = esp_camera_fb_get();
+    if (dummy) esp_camera_fb_return(dummy);
+    delay(50);
+  }
+
+  camera_fb_t *fb = esp_camera_fb_get();
+  digitalWrite(FLASH_GPIO_NUM, LOW); // Turn Flash OFF
+  return fb;
+}
+
 void messageHandler(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived on topic: ");
   Serial.println(topic);
   
-  Serial.println("Capturing photo...");
+  Serial.println("Capturing photo with Flash & Warm-up...");
   
-  // Retry up to 3 times with a short delay
   camera_fb_t * fb = NULL;
   for (int attempt = 1; attempt <= 3; attempt++) {
-    fb = esp_camera_fb_get();
+    fb = capturePhotoWithFlash();
     if (fb) {
       Serial.printf("Capture OK on attempt %d — %u bytes\n", attempt, fb->len);
       break;
@@ -306,8 +323,13 @@ void messageHandler(char* topic, byte* payload, unsigned int length) {
   esp_camera_fb_return(fb);
 }
 
+unsigned long lastMqttRetry = 0;
+
 void setup() {
   Serial.begin(115200);
+  pinMode(FLASH_GPIO_NUM, OUTPUT);
+  digitalWrite(FLASH_GPIO_NUM, LOW); // Flash OFF initially
+
   initCamera();
   connectToWiFi();
   connectToAWS();
@@ -320,9 +342,15 @@ void setup() {
 
 void loop() {
   if (!mqttClient.connected()) {
-    connectToAWS();
+    unsigned long now = millis();
+    if (now - lastMqttRetry > 5000) {
+      lastMqttRetry = now;
+      Serial.println("Reconnecting MQTT...");
+      connectToAWS();
+    }
+  } else {
+    mqttClient.loop();
   }
-  mqttClient.loop();
   server.handleClient();
   delay(10);
 }
