@@ -1,2 +1,16 @@
-node_modules
+node_modules/
 *.pth
+*.pkl
+*.onnx
+*.pt
+
+# Datasets
+dataset/
+mushroom dataset/
+
+# Environment & Cache
+.env
+__pycache__/
+*.pyc
+.expo/
+runs/
