@@ -650,7 +650,7 @@ export default function DiseaseResult() {
           </View>
           {/* Meta row */}
           <View style={s.heroMeta}>
-            <Text style={s.metaItem}>📷 {timestamp}</Text>
+            <Text style={s.metaItem}>📷 {params.isUpload === "true" ? "Uploaded Photo" : timestamp}</Text>
             <Text style={s.metaItem}>⚡ {processTime}</Text>
             <Text style={s.metaItem}>🤖 ResNet-50</Text>
             <Text style={s.metaItem}>{fromServer ? "🟢 EC2 Live" : "🟡 Demo"}</Text>
@@ -658,7 +658,9 @@ export default function DiseaseResult() {
 
           {/* Photo Display */}
           <View style={s.imgBox}>
-            {params.demoImg === "1" ? (
+            {params.imageUri ? (
+              <Image source={{ uri: params.imageUri }} style={s.img} resizeMode="cover" />
+            ) : params.demoImg === "1" ? (
               <Image source={DEMO_IMG_1} style={s.img} resizeMode="cover" />
             ) : params.demoImg === "2" ? (
               <Image source={DEMO_IMG_2} style={s.img} resizeMode="cover" />
