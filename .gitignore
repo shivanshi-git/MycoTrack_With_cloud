@@ -8,9 +8,25 @@ node_modules/
 dataset/
 mushroom dataset/
 
+<<<<<<< HEAD
+# Environment, Secrets & Keys
+.env
+.env*
+*.env
+services/.env
+*.pem
+
+# Cache & Build
+__pycache__/
+*.pyc
+.expo/
+dist/
+runs/
+=======
 # Environment & Cache
 .env
 __pycache__/
 *.pyc
 .expo/
 runs/
+>>>>>>> 85be3ca437a08b9e24759e9c915b9dffbec35d12
